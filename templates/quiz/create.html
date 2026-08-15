@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+
+{% block title %}Generate Quiz — AI Faculty TA{% endblock %}
+
+{% block section_title %}Generate Quiz{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <!-- Breadcrumb back -->
+    <a href="{% url 'quiz_dashboard' %}" class="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-700 mb-6 transition-colors">
+        <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        Back to Dashboard
+    </a>
+
+    <!-- Form Card -->
+    <div class="bg-white border border-slate-200/80 rounded-2xl p-8 shadow-sm">
+        <div class="mb-8">
+            <h2 class="font-outfit font-bold text-2xl text-slate-900">AI Quiz Generator</h2>
+            <p class="text-slate-500 text-sm mt-1">Configure parameters and upload reference notes.</p>
+        </div>
+
+        <form method="post" enctype="multipart/form-data" class="space-y-6">
+            {% csrf_token %}
+
+            <!-- Upload File -->
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Upload Lecture Material</label>
+                <div class="border border-dashed border-slate-350 hover:border-indigo-500/40 rounded-xl p-6 bg-slate-50/50 text-center transition-all cursor-pointer relative group">
+                    <input type="file" name="source_file" required accept=".pdf,.docx,.pptx,.txt" 
+                           class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                    <div class="space-y-2">
+                        <svg class="w-8 h-8 text-slate-400 mx-auto group-hover:text-indigo-600 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <p class="text-sm font-medium text-slate-700">Click to upload or drag & drop</p>
+                        <p class="text-xs text-slate-450">PDF, DOCX, PPTX, or TXT (Max 10MB)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Topic -->
+            <div>
+                <label for="id_topic" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Quiz Topic</label>
+                <input type="text" name="topic" required id="id_topic" 
+                       class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all placeholder-slate-400 focus:bg-white"
+                       placeholder="e.g. Memory Management, Dynamic Routing">
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Difficulty -->
+                <div>
+                    <label for="id_difficulty" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Difficulty Level</label>
+                    <select name="difficulty" id="id_difficulty" 
+                            class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all focus:bg-white">
+                        {% for code, label in difficulties %}
+                        <option value="{{ code }}" {% if code == 'MEDIUM' %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Number of Questions -->
+                <div>
+                    <label for="id_num_questions" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Number of Questions</label>
+                    <input type="number" name="num_questions" required id="id_num_questions" min="1" max="20" value="5"
+                           class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all font-mono focus:bg-white">
+                </div>
+            </div>
+
+            <!-- Submit -->
+            <button type="submit" 
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold font-outfit py-4 px-6 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 hover:scale-[1.01] active:scale-[0.99] transition-all">
+                Generate Questions via AI
+            </button>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+
+{% block title %}Review Summary — AI Faculty TA{% endblock %}
+
+{% block section_title %}Review Summary{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Breadcrumb back -->
+    <div class="flex justify-between items-center">
+        <a href="{% url 'summary_dashboard' %}" class="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+            Back to Dashboard
+        </a>
+
+        <!-- Export Dropdowns -->
+        <div class="flex gap-3">
+            <a href="{% url 'summary_download_pdf' summary.id %}" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center shadow-sm">
+                <svg class="w-4 h-4 mr-1.5 text-rose-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Download PDF
+            </a>
+            <a href="{% url 'summary_download_docx' summary.id %}" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 font-semibold text-xs py-2.5 px-4 rounded-xl transition-all flex items-center shadow-sm">
+                <svg class="w-4 h-4 mr-1.5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Download DOCX
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Details -->
+    <div class="p-6 bg-white border border-slate-200/80 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
+        <div>
+            <span class="text-xs text-slate-450 font-semibold uppercase tracking-wider">Summary Review</span>
+            <h2 class="font-outfit font-bold text-xl text-slate-900 mt-1">{{ summary.source_file_name }}</h2>
+            <p class="text-slate-500 text-xs mt-1">Generated: {{ summary.created_at|date:"M d, Y H:i" }}</p>
+        </div>
+        <div>
+            <span class="text-xs font-semibold px-3 py-1 rounded-full uppercase border
+                {% if summary.is_satisfactory %}bg-emerald-50 border-emerald-200 text-emerald-700
+                {% else %}bg-rose-50 border-rose-200 text-rose-700{% endif %}">
+                {% if summary.is_satisfactory %}Satisfactory{% else %}Requires Edit{% endif %}
+            </span>
+        </div>
+    </div>
+
+    <!-- Review Form -->
+    <form method="post" class="bg-white border border-slate-200/80 rounded-2xl p-6 space-y-6 shadow-sm">
+        {% csrf_token %}
+
+        <!-- Textarea -->
+        <div>
+            <label for="summary_text" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Edit Summary Text (Markdown Supported)</label>
+            <textarea name="summary_text" id="summary_text" rows="15" required
+                      class="w-full bg-slate-50 border border-slate-300 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all font-mono leading-relaxed focus:bg-white">{{ summary.summary_text }}</textarea>
+        </div>
+
+        <!-- Satisfaction Toggle -->
+        <div class="flex items-center gap-6">
+            <span class="text-xs font-semibold text-slate-500 uppercase tracking-wider font-outfit">Status:</span>
+            
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="radio" name="is_satisfactory" value="true" {% if summary.is_satisfactory %}checked{% endif %} class="hidden peer">
+                <span class="text-xs font-semibold px-4 py-2 border border-slate-350 peer-checked:border-emerald-600 peer-checked:bg-emerald-50 text-slate-600 peer-checked:text-emerald-700 rounded-xl transition-all">
+                    Satisfactory
+                </span>
+            </label>
+
+            <label class="inline-flex items-center cursor-pointer">
+                <input type="radio" name="is_satisfactory" value="false" {% if not summary.is_satisfactory %}checked{% endif %} class="hidden peer">
+                <span class="text-xs font-semibold px-4 py-2 border border-slate-350 peer-checked:border-rose-600 peer-checked:bg-rose-50 text-slate-600 peer-checked:text-rose-700 rounded-xl transition-all">
+                    Requires Revision
+                </span>
+            </label>
+        </div>
+
+        <!-- Save Button -->
+        <div class="flex justify-end pt-4 border-t border-slate-200">
+            <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-sm py-3 px-6 rounded-xl transition-all shadow-sm">
+                Save Summary Changes
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

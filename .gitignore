@@ -1,0 +1,10 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+media/
+staticfiles/
+db.sqlite3
+*.log
+.agents/
+.gemini/
