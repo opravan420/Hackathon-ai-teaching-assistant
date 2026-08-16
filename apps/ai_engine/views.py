@@ -53,7 +53,7 @@ def task_status_api(request, task_id):
             'stage_label': 'Task Not Found',
             'message': 'The specified task ID could not be found.',
             'error': 'Task not found.'
-        }, status=200)
+        }, status=404)
 
     return JsonResponse(task)
 
