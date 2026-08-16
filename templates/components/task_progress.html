@@ -1,0 +1,69 @@
+{% comment %}
+Reusable Task Progress Component
+Parameters:
+  task_type: string (quiz_generation | summarization | grading | document_processing)
+  title: string (Default title displayed above progress bar)
+{% endcomment %}
+<div id="taskProgressContainer" class="hidden my-6 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm transition-all duration-300">
+    <!-- Header: Title & Status Badge -->
+    <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center space-x-3">
+            <!-- Animated Spinner Icon -->
+            <div id="taskStatusSpinner" class="w-8 h-8 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </div>
+            <div>
+                <h3 id="taskProgressTitle" class="font-outfit font-bold text-base text-slate-900">
+                    {{ title|default:"Processing AI Task" }}
+                </h3>
+                <p id="taskProgressSubtext" class="text-xs text-slate-500">Please wait while the AI process completes.</p>
+            </div>
+        </div>
+        
+        <!-- Status Badge -->
+        <span id="taskStatusBadge" class="text-xs font-bold font-outfit uppercase px-3 py-1 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-100 transition-colors">
+            RUNNING
+        </span>
+    </div>
+
+    <!-- Progress Bar & Percentage -->
+    <div class="space-y-2 mb-4">
+        <div class="flex justify-between items-center text-xs font-semibold">
+            <span id="taskStageLabel" class="text-slate-700">Preparing task...</span>
+            <span id="taskPercentText" class="text-indigo-600 font-mono">10%</span>
+        </div>
+        <div class="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-200/50">
+            <div id="taskProgressBar" 
+                 class="bg-gradient-to-r from-indigo-500 to-indigo-600 h-full rounded-full transition-all duration-500 ease-out" 
+                 style="width: 10%;">
+            </div>
+        </div>
+    </div>
+
+    <!-- Friendly Dynamic Message -->
+    <div id="taskMessageCard" class="bg-slate-50 border border-slate-200/60 rounded-xl p-3.5 flex items-center text-xs text-slate-600 space-x-2">
+        <svg class="w-4 h-4 text-indigo-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        <span id="taskMessageText">Task started. Initializing processing environment...</span>
+    </div>
+
+    <!-- Error Alert Card (Hidden by default) -->
+    <div id="taskErrorAlert" class="hidden mt-4 bg-rose-50 border border-rose-150 rounded-xl p-4 text-xs text-rose-700">
+        <div class="flex items-start space-x-3">
+            <svg class="w-5 h-5 text-rose-500 shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="flex-1">
+                <h4 class="font-bold font-outfit text-rose-800 mb-1">Task Failed</h4>
+                <p id="taskErrorMessage" class="text-rose-700">An unexpected error occurred during processing.</p>
+                <button type="button" id="taskRetryBtn" onclick="window.resetTaskProgressUI()" class="mt-3 bg-rose-600 hover:bg-rose-700 text-white font-semibold px-4 py-1.5 rounded-lg shadow-sm transition-all text-xs">
+                    Try Again
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

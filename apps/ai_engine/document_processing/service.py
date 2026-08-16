@@ -10,6 +10,7 @@ from .pdf_parser import PDFParser
 from .docx_parser import DOCXParser
 from .pptx_parser import PPTXParser
 from .txt_parser import TXTParser
+from .image_parser import ImageParser
 from .validators import validate_uploaded_file
 from apps.ai_engine.models import Document
 
@@ -42,11 +43,15 @@ class DocumentService:
     """Service class for coordinating document verification and text extraction."""
 
     def __init__(self):
+        img_parser = ImageParser()
         self.parsers = {
             '.pdf': PDFParser(),
             '.docx': DOCXParser(),
             '.pptx': PPTXParser(),
-            '.txt': TXTParser()
+            '.txt': TXTParser(),
+            '.png': img_parser,
+            '.jpg': img_parser,
+            '.jpeg': img_parser
         }
 
     def process_document(self, teacher, uploaded_file) -> Document:

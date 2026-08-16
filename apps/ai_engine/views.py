@@ -1,12 +1,34 @@
+import logging
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from django.http import HttpResponseForbidden, Http404
+from django.http import HttpResponseForbidden, Http404, JsonResponse
 from django.conf import settings
 from apps.ai_engine.services.llm_service import LLMService
 from apps.ai_engine.exceptions import LLMError
-import logging
+from apps.ai_engine.task_tracker import TaskTracker
 
 logger = logging.getLogger(__name__)
+
+@login_required
+def task_status_api(request, task_id):
+    """
+    Central API endpoint for frontend task status & progress polling.
+    Returns task state, progress percentage, current stage label, and dynamic message.
+    """
+    tracker = TaskTracker()
+    task = tracker.get_task(task_id)
+    if not task:
+        return JsonResponse({
+            'task_id': task_id,
+            'status': 'FAILED',
+            'progress': 0,
+            'stage': 'FAILED',
+            'stage_label': 'Task Not Found',
+            'message': 'The specified task ID could not be found.',
+            'error': 'Task not found.'
+        }, status=404)
+
+    return JsonResponse(task)
 
 @login_required
 def ai_test_view(request):
@@ -169,7 +191,6 @@ def ai_rag_gemma_test_view(request):
         return HttpResponseForbidden("Access restricted to teachers only.")
 
     from apps.ai_engine.rag.rag_answer_service import RAGAnswerService
-    from apps.ai_engine.services.llm_service import LLMService
 
     rag_answer_service = RAGAnswerService()
     llm_health = LLMService().perform_health_check()
@@ -189,7 +210,6 @@ def ai_rag_gemma_test_view(request):
             error_message = "Please enter a question to ask Gemma."
         else:
             try:
-                # Use authenticated teacher_id strictly from request.user.id
                 rag_result = rag_answer_service.answer_question(
                     query=query,
                     teacher_id=request.user.id,
@@ -213,6 +233,3 @@ def ai_rag_gemma_test_view(request):
         'error_message': error_message,
         'success_message': success_message
     })
-
-
-

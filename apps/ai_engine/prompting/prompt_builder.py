@@ -31,9 +31,9 @@ class PromptBuilder:
             "CRITICAL RULES:\n"
             "1. Output ONLY valid raw JSON containing a single top-level object with key 'questions'.\n"
             "2. Do NOT enclose in markdown code blocks like ```json ... ``` or add conversational commentary.\n"
-            "3. Each item in 'questions' must have keys: 'question', 'options' (array of exactly 4 strings), "
-            "'correct_answer' (must match one of the 4 options verbatim), and 'explanation'.\n"
-            "4. Ensure options are distinct and plausible, with exactly one correct option.\n"
+            "3. Each item in 'questions' must have keys: 'question', 'options' (array of exactly 4 distinct strings), "
+            "'correct_option' (must be 'A', 'B', 'C', or 'D'), and 'explanation'.\n"
+            "4. Ensure options are distinct and plausible, with exactly one defensible correct option.\n"
             "5. If document context is provided, questions MUST be based strictly on that context."
         )
 
@@ -54,8 +54,8 @@ class PromptBuilder:
             f'  "questions": [\n'
             f'    {{\n'
             f'      "question": "Clear question text?",\n'
-            f'      "options": ["Option A", "Option B", "Option C", "Option D"],\n'
-            f'      "correct_answer": "Option A",\n'
+            f'      "options": ["Option text A", "Option text B", "Option text C", "Option text D"],\n'
+            f'      "correct_option": "A",\n'
             f'      "explanation": "Clear reason why Option A is correct."\n'
             f'    }}\n'
             f'  ]\n'

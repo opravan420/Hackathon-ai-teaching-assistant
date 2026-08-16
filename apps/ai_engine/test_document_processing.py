@@ -186,7 +186,7 @@ class DocumentProcessingTestCase(TestCase):
 
     # 11. Unsupported format (Extension check)
     def test_unsupported_extension_raises_error(self):
-        upload_file = SimpleUploadedFile("image.png", b"png bytes")
+        upload_file = SimpleUploadedFile("archive.zip", b"zip bytes")
         with self.assertRaises(UnsupportedFileTypeError):
             self.service.process_document(self.teacher_1, upload_file)
 

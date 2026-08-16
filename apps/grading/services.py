@@ -27,39 +27,64 @@ class GradingService:
         self,
         teacher,
         question_paper_file,
-        master_answer_file,
         student_answer_file,
+        master_answer_file = None,
         rubric_file = None,
+        evaluation_criteria: str = None,
+        additional_instructions: str = None,
         student_name: str = "Student",
         default_max_marks: float = 5.0
     ) -> StudentGradingResult:
         """
-        Evaluates a student's answer sheet question-by-question against master answer key and rubric.
-        Validates max marks bounds (marks_awarded <= max_marks) and checks for handwritten image limitations.
+        Evaluates a student's answer sheet question-by-question against optional master answer key and grading criteria.
+        Criteria can be provided via uploaded rubric file OR manual evaluation instructions (XOR).
         """
-        if not question_paper_file or not master_answer_file or not student_answer_file:
-            raise ValueError("Question Paper, Master Answer Key, and Student Answer Sheet are required.")
+        if not question_paper_file or not student_answer_file:
+            raise ValueError("Question Paper and Student Answer Sheet are required.")
 
-        # Step 1: Process Question Paper, Master Answer, and Rubric
+        has_file_rubric = bool(rubric_file)
+        has_manual_rubric = bool(evaluation_criteria and evaluation_criteria.strip()) or bool(additional_instructions and additional_instructions.strip())
+
+        if has_file_rubric and has_manual_rubric:
+            raise ValueError("Please use either a grading criteria document or manual grading criteria, not both.")
+
+        if not has_file_rubric and not has_manual_rubric:
+            raise ValueError("Please either upload a grading criteria document or enter the grading criteria manually.")
+
+        # Step 1: Process Question Paper, Master Answer (Optional), and Criteria
         qp_doc = self.doc_service.process_document(teacher, question_paper_file)
-        ma_doc = self.doc_service.process_document(teacher, master_answer_file)
         
+        ma_text = ""
+        ma_name = "None"
+        if master_answer_file:
+            ma_doc = self.doc_service.process_document(teacher, master_answer_file)
+            ma_text = ma_doc.extracted_text
+            ma_name = ma_doc.original_filename
+        else:
+            ma_text = "No master answer key provided. Grade based on standard question requirements and grading criteria."
+
         rubric_text = ""
         rubric_name = "None"
-        if rubric_file:
+        if has_file_rubric:
             r_doc = self.doc_service.process_document(teacher, rubric_file)
             rubric_text = r_doc.extracted_text
             rubric_name = r_doc.original_filename
+        elif has_manual_rubric:
+            parts = []
+            if evaluation_criteria and evaluation_criteria.strip():
+                parts.append(f"Evaluation Criteria:\n{evaluation_criteria.strip()}")
+            if additional_instructions and additional_instructions.strip():
+                parts.append(f"Additional Instructions:\n{additional_instructions.strip()}")
+            rubric_text = "\n\n".join(parts)
+            rubric_name = "Manual Criteria"
 
-        # Step 2: Process Student Answer Sheet & Check Handwritten Image Limitation
+        # Step 2: Process Student Answer Sheet & Check Text Extraction
         try:
             student_doc = self.doc_service.process_document(teacher, student_answer_file)
             student_text = student_doc.extracted_text.strip()
         except Exception as e:
-            # Catch unsupported formats (e.g. PNG, JPG) or empty text extraction
             raise GradingError(
-                "Handwritten image answer sheets require text extraction. "
-                "Please upload student answer sheets in text-based PDF/DOCX/TXT format or provide digital text."
+                f"Could not extract readable text from student answer sheet: {str(e)}"
             )
 
         if not student_text:
@@ -69,18 +94,18 @@ class GradingService:
             )
 
         # Step 3: Parse questions and master answers into question blocks
-        question_blocks = self._parse_question_blocks(qp_doc.extracted_text, ma_doc.extracted_text, default_max_marks)
+        question_blocks = self._parse_question_blocks(qp_doc.extracted_text, ma_text, default_max_marks)
 
         if not question_blocks:
             # Fallback: treat entire document as single Question 1 if structure parsing is monolithic
             question_blocks = [{
                 "question_number": "Q1",
                 "question_text": qp_doc.extracted_text[:1000],
-                "master_answer": ma_doc.extracted_text[:1000],
+                "master_answer": ma_text[:1000],
                 "max_marks": default_max_marks
             }]
 
-        # Step 4: Evaluate question-by-question via Gemma
+        # Step 4: Evaluate question-by-question via LLM
         evaluated_scores = []
         for q_block in question_blocks:
             user_prompt, system_prompt = self.prompt_builder.build_grading_prompt(
@@ -102,7 +127,7 @@ class GradingService:
             session = GradingSession.objects.create(
                 teacher=teacher,
                 question_paper_name=qp_doc.original_filename,
-                master_answer_name=ma_doc.original_filename,
+                master_answer_name=ma_name,
                 rubric_name=rubric_name
             )
 

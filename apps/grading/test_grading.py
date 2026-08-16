@@ -37,16 +37,18 @@ class GradingTestCase(TestCase):
         )
 
     @patch('apps.ai_engine.services.llm_service.LLMService.generate_text')
-    def test_text_based_student_grading_success(self, mock_generate):
+    def test_uploaded_rubric_with_optional_master_answer_key_success(self, mock_generate):
         mock_generate.return_value = self.mock_eval_json
 
         qp_file = SimpleUploadedFile("qp.txt", b"Q1 (5 Marks): What is deadlock?", content_type="text/plain")
-        key_file = SimpleUploadedFile("key.txt", b"Q1: Deadlock is a state where processes wait on each other.", content_type="text/plain")
+        rubric_file = SimpleUploadedFile("rubric.txt", b"Grade based on process isolation and resource lock.", content_type="text/plain")
         student_file = SimpleUploadedFile("student_answer.txt", b"Deadlock happens when processes hold and wait.", content_type="text/plain")
 
+        # Test WITHOUT master answer key (Master Answer Key is optional!)
         response = self.client.post(reverse('grading_create'), {
             'question_paper': qp_file,
-            'master_answer': key_file,
+            'criteria_source': 'file',
+            'rubric': rubric_file,
             'student_name': 'Alice Smith',
             'student_image': student_file
         }, follow=True)
@@ -55,29 +57,73 @@ class GradingTestCase(TestCase):
         self.assertTemplateUsed(response, 'grading/review.html')
 
         session = GradingSession.objects.get(teacher=self.teacher1, question_paper_name='qp.txt')
+        self.assertEqual(session.master_answer_name, 'None')
+        self.assertEqual(session.rubric_name, 'rubric.txt')
         result = StudentGradingResult.objects.get(session=session, student_name='Alice Smith')
         self.assertEqual(result.total_score, 4.5)
-        self.assertEqual(result.max_score, 5.0)
 
-        score = result.question_scores.first()
-        self.assertEqual(score.score_given, 4.5)
-        self.assertEqual(score.max_score, 5.0)
+    @patch('apps.ai_engine.services.llm_service.LLMService.generate_text')
+    def test_manual_criteria_with_master_answer_key_success(self, mock_generate):
+        mock_generate.return_value = self.mock_eval_json
 
-    def test_unsupported_image_answersheet_error_handling(self):
-        qp_file = SimpleUploadedFile("qp.txt", b"Q1: Define OS.", content_type="text/plain")
-        key_file = SimpleUploadedFile("key.txt", b"Q1: Operating System.", content_type="text/plain")
-        image_file = SimpleUploadedFile("handwritten.png", b"Fake PNG Data", content_type="image/png")
+        qp_file = SimpleUploadedFile("qp.txt", b"Q1 (5 Marks): What is deadlock?", content_type="text/plain")
+        key_file = SimpleUploadedFile("key.txt", b"Q1: Deadlock is mutual waiting state.", content_type="text/plain")
+        student_file = SimpleUploadedFile("student_answer.txt", b"Deadlock occurs when process wait on each other.", content_type="text/plain")
 
         response = self.client.post(reverse('grading_create'), {
             'question_paper': qp_file,
             'master_answer': key_file,
+            'criteria_source': 'manual',
+            'default_max_marks': '5.0',
+            'evaluation_criteria': 'Check definition accuracy and key terms',
+            'additional_instructions': 'Give partial credit for held resource concepts',
+            'student_name': 'Bob Johnson',
+            'student_image': student_file
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'grading/review.html')
+
+        session = GradingSession.objects.get(teacher=self.teacher1, question_paper_name='qp.txt')
+        self.assertEqual(session.master_answer_name, 'key.txt')
+        self.assertEqual(session.rubric_name, 'Manual Criteria')
+        result = StudentGradingResult.objects.get(session=session, student_name='Bob Johnson')
+        self.assertEqual(result.total_score, 4.5)
+
+    def test_missing_criteria_validation_error(self):
+        qp_file = SimpleUploadedFile("qp.txt", b"Q1: Define OS.", content_type="text/plain")
+        student_file = SimpleUploadedFile("student.txt", b"Operating system manages hardware.", content_type="text/plain")
+
+        # Submit without rubric document or manual criteria
+        response = self.client.post(reverse('grading_create'), {
+            'question_paper': qp_file,
+            'criteria_source': 'file',
             'student_name': 'Charlie',
-            'student_image': image_file
+            'student_image': student_file
         }, follow=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'grading/create.html')
-        self.assertContains(response, "An error occurred while grading the answers")
+        self.assertContains(response, "Please either upload a grading criteria document or enter the grading criteria manually.")
+
+    def test_both_criteria_methods_validation_error(self):
+        qp_file = SimpleUploadedFile("qp.txt", b"Q1: Define OS.", content_type="text/plain")
+        rubric_file = SimpleUploadedFile("rubric.txt", b"Rubric text.", content_type="text/plain")
+        student_file = SimpleUploadedFile("student.txt", b"Operating system manages hardware.", content_type="text/plain")
+
+        # Submit with BOTH criteria document and manual criteria
+        response = self.client.post(reverse('grading_create'), {
+            'question_paper': qp_file,
+            'criteria_source': 'manual',
+            'rubric': rubric_file,
+            'evaluation_criteria': 'Manual criteria text',
+            'student_name': 'Charlie',
+            'student_image': student_file
+        }, follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTemplateUsed(response, 'grading/create.html')
+        self.assertContains(response, "Please use either a grading criteria document or manual grading criteria, not both.")
 
     def test_teacher_isolation(self):
         s2 = GradingSession.objects.create(teacher=self.teacher2, question_paper_name="qp2.txt", master_answer_name="key2.txt")

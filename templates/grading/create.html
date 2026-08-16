@@ -16,31 +16,72 @@
     <div class="bg-white border border-slate-200/80 rounded-2xl p-8 shadow-sm">
         <div class="mb-8">
             <h2 class="font-outfit font-bold text-2xl text-slate-900">Start AI Grading</h2>
-            <p class="text-slate-500 text-sm mt-1">Upload the reference papers and student handwriting answer sheet.</p>
+            <p class="text-slate-500 text-sm mt-1">Upload reference question paper, optional answer key, criteria, and student answer sheet.</p>
         </div>
 
-        <form method="post" enctype="multipart/form-data" class="space-y-6">
+        <form method="post" enctype="multipart/form-data" id="grading_form" class="ai-task-form space-y-6" data-task-type="grading" data-task-title="Evaluating Student Answer Sheet via AI">
             {% csrf_token %}
 
-            <!-- Question Paper -->
-            <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Upload Question Paper</label>
-                <input type="file" name="question_paper" required accept=".pdf,.docx,.txt"
-                       class="w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-105 file:text-slate-700 hover:file:bg-slate-200 file:cursor-pointer">
-            </div>
+            <!-- Question Paper (Required) -->
+            {% include 'components/file_upload.html' with input_name="question_paper" input_id="id_question_paper" label_text="Upload Question Paper *" accept_types=".pdf,.docx,.txt" help_text="PDF, DOCX, or TXT (Required)" is_required=True max_size_mb=10 %}
 
-            <!-- Master Answer Key -->
-            <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Upload Master Answer Key</label>
-                <input type="file" name="master_answer" required accept=".pdf,.docx,.txt"
-                       class="w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-105 file:text-slate-700 hover:file:bg-slate-200 file:cursor-pointer">
-            </div>
+            <!-- Master Answer Key (Optional) -->
+            {% include 'components/file_upload.html' with input_name="master_answer" input_id="id_master_answer" label_text="Upload Master Answer Key (Optional)" accept_types=".pdf,.docx,.txt" help_text="PDF, DOCX, or TXT — Optional reference key" is_required=False max_size_mb=10 %}
 
-            <!-- Rubric -->
-            <div>
-                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Upload Grading Rubric / Criteria (Optional)</label>
-                <input type="file" name="rubric" accept=".pdf,.docx,.txt"
-                       class="w-full text-sm text-slate-600 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-slate-105 file:text-slate-700 hover:file:bg-slate-200 file:cursor-pointer">
+            <hr class="border-slate-200 my-2">
+
+            <!-- Grading Criteria Section (Required via ONE method) -->
+            <div class="space-y-4">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Grading Criteria *</label>
+                        <p class="text-xs text-slate-500 mt-0.5">Provide grading criteria using either a document or the manual form.</p>
+                    </div>
+                </div>
+
+                <!-- Method Selector Toggle -->
+                <div class="flex p-1 bg-slate-100/80 rounded-xl space-x-1 border border-slate-200/60" role="tablist">
+                    <button type="button" id="btn_criteria_file" class="flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all shadow-sm bg-indigo-600 text-white cursor-pointer flex items-center justify-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/></svg>
+                        <span>Upload Document</span>
+                    </button>
+                    <button type="button" id="btn_criteria_manual" class="flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 cursor-pointer flex items-center justify-center space-x-2">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+                        <span>Enter Manually</span>
+                    </button>
+                </div>
+
+                <input type="hidden" name="criteria_source" id="criteria_source" value="file">
+
+                <!-- Method A: Upload Document Container -->
+                <div id="criteria_file_container">
+                    {% include 'components/file_upload.html' with input_name="rubric" input_id="id_rubric" label_text="Criteria Document" accept_types=".pdf,.docx,.txt" help_text="PDF, DOCX, or TXT" is_required=False max_size_mb=10 %}
+                </div>
+
+                <!-- Method B: Enter Manually Container -->
+                <div id="criteria_manual_container" class="hidden space-y-4 bg-slate-50/60 border border-slate-200/80 rounded-xl p-4">
+                    <div>
+                        <label for="default_max_marks" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Marks per Question</label>
+                        <input type="number" step="0.5" min="0.5" name="default_max_marks" id="default_max_marks" value="5.0"
+                               class="w-full bg-white border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all font-mono">
+                    </div>
+
+                    <div>
+                        <label for="evaluation_criteria" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Evaluation Criteria / Instructions</label>
+                        <textarea name="evaluation_criteria" id="evaluation_criteria" rows="3"
+                                  placeholder="e.g. Focus on accuracy of key concepts, technical definitions, and logical reasoning..."
+                                  class="w-full bg-white border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all placeholder-slate-400"></textarea>
+                    </div>
+
+                    <div>
+                        <label for="additional_instructions" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Additional Grading Instructions</label>
+                        <textarea name="additional_instructions" id="additional_instructions" rows="2"
+                                  placeholder="e.g. Award partial credit for correct steps even if final result has calculation errors..."
+                                  class="w-full bg-white border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all placeholder-slate-400"></textarea>
+                    </div>
+                </div>
+
+                <p id="criteria_error_msg" class="text-xs text-rose-600 hidden font-medium"></p>
             </div>
 
             <hr class="border-slate-200 my-2">
@@ -52,15 +93,106 @@
                        class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all focus:bg-white">
             </div>
 
-            <!-- Student Answer Sheet -->
-            {% include 'components/file_upload.html' with input_name="student_image" input_id="id_student_image" label_text="Upload Student Answer Sheet Image" accept_types="image/png, image/jpeg" help_text="PNG or JPG/JPEG (Handwritten Page)" is_required=True max_size_mb=10 %}
+            <!-- Student Answer Sheet (Required) -->
+            {% include 'components/file_upload.html' with input_name="student_image" input_id="id_student_image" label_text="Upload Student Answer Sheet *" accept_types=".png,.jpg,.jpeg,.pdf,.docx,.txt" help_text="PNG, JPG/JPEG, PDF, DOCX, or TXT" is_required=True max_size_mb=10 %}
+
+            <!-- Task Progress Component -->
+            {% include 'components/task_progress.html' with title="Evaluating Student Answer Sheet via AI" %}
 
             <!-- Submit -->
-            <button type="submit" 
-                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold font-outfit py-4 px-6 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 hover:scale-[1.01] active:scale-[0.99] transition-all">
-                Evaluate Handwritten Sheet
+            <button type="submit" id="btn_submit_grading"
+                    class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold font-outfit py-4 px-6 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer">
+                Evaluate Answer Sheet
             </button>
         </form>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btnFile = document.getElementById('btn_criteria_file');
+    const btnManual = document.getElementById('btn_criteria_manual');
+    const containerFile = document.getElementById('criteria_file_container');
+    const containerManual = document.getElementById('criteria_manual_container');
+    const criteriaSourceInput = document.getElementById('criteria_source');
+    const rubricInput = document.getElementById('id_rubric');
+    const evalCriteriaText = document.getElementById('evaluation_criteria');
+    const addInstructionsText = document.getElementById('additional_instructions');
+    const errorMsg = document.getElementById('criteria_error_msg');
+    const form = document.getElementById('grading_form');
+
+    function setCriteriaMode(mode) {
+        criteriaSourceInput.value = mode;
+        if (errorMsg) {
+            errorMsg.textContent = '';
+            errorMsg.classList.add('hidden');
+        }
+
+        if (mode === 'file') {
+            // Activate File Tab UI
+            btnFile.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all shadow-sm bg-indigo-600 text-white cursor-pointer flex items-center justify-center space-x-2';
+            btnManual.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 cursor-pointer flex items-center justify-center space-x-2';
+            
+            containerFile.classList.remove('hidden');
+            containerManual.classList.add('hidden');
+
+            // Reset manual text inputs
+            if (evalCriteriaText) evalCriteriaText.value = '';
+            if (addInstructionsText) addInstructionsText.value = '';
+        } else {
+            // Activate Manual Tab UI
+            btnManual.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all shadow-sm bg-indigo-600 text-white cursor-pointer flex items-center justify-center space-x-2';
+            btnFile.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 cursor-pointer flex items-center justify-center space-x-2';
+            
+            containerManual.classList.remove('hidden');
+            containerFile.classList.add('hidden');
+
+            // Reset file input if present
+            if (rubricInput) {
+                rubricInput.value = '';
+                const removeBtn = containerFile.querySelector('.js-btn-remove');
+                if (removeBtn) removeBtn.click();
+            }
+        }
+    }
+
+    if (btnFile) btnFile.addEventListener('click', () => setCriteriaMode('file'));
+    if (btnManual) btnManual.addEventListener('click', () => setCriteriaMode('manual'));
+
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const mode = criteriaSourceInput.value;
+            let isValid = true;
+            let msg = '';
+
+            if (mode === 'file') {
+                const hasFile = rubricInput && rubricInput.files && rubricInput.files.length > 0;
+                if (!hasFile) {
+                    isValid = false;
+                    msg = 'Please either upload a grading criteria document or enter the grading criteria manually.';
+                }
+            } else if (mode === 'manual') {
+                const evalVal = evalCriteriaText ? evalCriteriaText.value.trim() : '';
+                const addVal = addInstructionsText ? addInstructionsText.value.trim() : '';
+                if (!evalVal && !addVal) {
+                    isValid = false;
+                    msg = 'Please either upload a grading criteria document or enter the grading criteria manually.';
+                }
+            }
+
+            if (!isValid) {
+                e.preventDefault();
+                e.stopPropagation();
+                if (errorMsg) {
+                    errorMsg.textContent = msg;
+                    errorMsg.classList.remove('hidden');
+                } else {
+                    alert(msg);
+                }
+                return false;
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

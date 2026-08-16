@@ -13,10 +13,10 @@ def validate_uploaded_file(file):
     if ext == '.ppt':
         raise UnsupportedFileTypeError("legacy .ppt format is not supported. Please upload a .pptx file instead.")
 
-    allowed_extensions = ['.pdf', '.docx', '.pptx', '.txt']
+    allowed_extensions = ['.pdf', '.docx', '.pptx', '.txt', '.png', '.jpg', '.jpeg']
     if ext not in allowed_extensions:
         raise UnsupportedFileTypeError(
-            f"Unsupported file type '{ext}'. Supported formats: PDF, DOCX, PPTX, TXT."
+            f"Unsupported file type '{ext}'. Supported formats: PDF, DOCX, PPTX, TXT, PNG, JPG, JPEG."
         )
 
     # Validate file size

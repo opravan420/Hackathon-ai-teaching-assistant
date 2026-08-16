@@ -16,6 +16,9 @@ def grading_create(request):
         question_paper = request.FILES.get('question_paper')
         master_answer = request.FILES.get('master_answer')
         rubric = request.FILES.get('rubric')
+        criteria_source = request.POST.get('criteria_source', 'file')
+        evaluation_criteria = request.POST.get('evaluation_criteria', '').strip()
+        additional_instructions = request.POST.get('additional_instructions', '').strip()
         student_name = request.POST.get('student_name', 'Student Name')
         student_image = request.FILES.get('student_image') # Student answer sheet file
         
@@ -24,18 +27,46 @@ def grading_create(request):
         except (ValueError, TypeError):
             default_max_marks = 5.0
 
-        if not question_paper or not master_answer or not student_image:
-            messages.error(request, "Please upload Question Paper, Answer Key, and Student Answer Sheet.")
+        if not question_paper or not student_image:
+            messages.error(request, "Please upload Question Paper and Student Answer Sheet.")
             return redirect('grading_create')
+
+        # XOR Criteria Validation
+        has_file = bool(rubric)
+        has_manual = bool(evaluation_criteria) or bool(additional_instructions)
+
+        if criteria_source == 'file':
+            if not has_file:
+                messages.error(request, "Please either upload a grading criteria document or enter the grading criteria manually.")
+                return redirect('grading_create')
+            evaluation_criteria = None
+            additional_instructions = None
+        elif criteria_source == 'manual':
+            if not has_manual:
+                messages.error(request, "Please either upload a grading criteria document or enter the grading criteria manually.")
+                return redirect('grading_create')
+            if has_file:
+                messages.error(request, "Please use either a grading criteria document or manual grading criteria, not both.")
+                return redirect('grading_create')
+            rubric = None
+        else:
+            if has_file and has_manual:
+                messages.error(request, "Please use either a grading criteria document or manual grading criteria, not both.")
+                return redirect('grading_create')
+            if not has_file and not has_manual:
+                messages.error(request, "Please either upload a grading criteria document or enter the grading criteria manually.")
+                return redirect('grading_create')
 
         grading_service = GradingService()
         try:
             result = grading_service.grade_student_sheet(
                 teacher=request.user,
                 question_paper_file=question_paper,
-                master_answer_file=master_answer,
                 student_answer_file=student_image,
+                master_answer_file=master_answer,
                 rubric_file=rubric,
+                evaluation_criteria=evaluation_criteria,
+                additional_instructions=additional_instructions,
                 student_name=student_name,
                 default_max_marks=default_max_marks
             )
