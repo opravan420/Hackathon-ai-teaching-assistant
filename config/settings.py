@@ -82,6 +82,10 @@ if DATABASE_URL:
             'PASSWORD': url.password,
             'HOST': url.hostname,
             'PORT': url.port or 5432,
+            'TEST': {
+                'CHARSET': 'UTF8',
+                'TEMPLATE': 'template0',
+            },
         }
     }
 else:

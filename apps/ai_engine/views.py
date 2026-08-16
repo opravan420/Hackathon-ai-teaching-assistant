@@ -46,3 +46,47 @@ def ai_test_view(request):
         'response_text': response_text,
         'error_message': error_message
     })
+
+@login_required
+def ai_document_test_view(request):
+    # Safeguard 1: Development only
+    if not settings.DEBUG:
+        raise Http404("Development endpoint only.")
+        
+    # Safeguard 2: Product authorization - strictly requires Teacher role
+    if request.user.role != 'TEACHER':
+        return HttpResponseForbidden("Access restricted to teachers only.")
+
+    document = None
+    error_message = ""
+    success_message = ""
+
+    if request.method == 'POST':
+        uploaded_file = request.FILES.get('document_file')
+        if not uploaded_file:
+            error_message = "Please select a file to upload."
+        else:
+            from apps.ai_engine.document_processing.service import DocumentService
+            from apps.ai_engine.document_processing.exceptions import DocumentError
+            
+            service = DocumentService()
+            try:
+                document = service.process_document(request.user, uploaded_file)
+                success_message = f"File '{document.original_filename}' processed successfully!"
+            except DocumentError as e:
+                error_message = str(e)
+            except Exception as e:
+                error_message = "An unexpected error occurred during document processing."
+                logger.error(f"Error in document processing view: {str(e)}", exc_info=True)
+
+    # Fetch previous historical documents for this teacher
+    from apps.ai_engine.models import Document
+    documents = Document.objects.filter(teacher=request.user).order_by('-created_at')
+
+    return render(request, 'ai_engine/document_test.html', {
+        'document': document,
+        'documents': documents,
+        'error_message': error_message,
+        'success_message': success_message
+    })
+
