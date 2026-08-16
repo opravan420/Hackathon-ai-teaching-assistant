@@ -3,6 +3,7 @@ Django settings for AI Faculty Teaching Assistant project.
 """
 
 import os
+import socket
 from pathlib import Path
 from urllib.parse import urlparse
 import dotenv
@@ -74,20 +75,43 @@ ASGI_APPLICATION = 'config.asgi.application'
 DATABASE_URL = os.getenv('DATABASE_URL')
 if DATABASE_URL:
     url = urlparse(DATABASE_URL)
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': url.path[1:],
-            'USER': url.username,
-            'PASSWORD': url.password,
-            'HOST': url.hostname,
-            'PORT': url.port or 5432,
-            'TEST': {
-                'CHARSET': 'UTF8',
-                'TEMPLATE': 'template0',
-            },
+    host = url.hostname or '127.0.0.1'
+    port = url.port or 5432
+    
+    postgres_reachable = False
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(0.5)
+        res = sock.connect_ex((host, port))
+        if res == 0:
+            postgres_reachable = True
+        sock.close()
+    except Exception:
+        postgres_reachable = False
+
+    if postgres_reachable:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': url.path[1:],
+                'USER': url.username,
+                'PASSWORD': url.password,
+                'HOST': host,
+                'PORT': port,
+                'TEST': {
+                    'CHARSET': 'UTF8',
+                    'TEMPLATE': 'template0',
+                },
+            }
         }
-    }
+    else:
+        print(f"Warning: PostgreSQL server at {host}:{port} is unreachable. Falling back to local SQLite database (db.sqlite3).")
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.sqlite3',
+                'NAME': BASE_DIR / 'db.sqlite3',
+            }
+        }
 else:
     # Fallback to sqlite3 for safety / check execution
     DATABASES = {

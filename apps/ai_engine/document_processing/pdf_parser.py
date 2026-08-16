@@ -13,13 +13,13 @@ class PDFParser(BaseDocumentParser):
 
         try:
             extracted_pages = []
-            for page in doc:
-                text = page.get_text()
-                if text.strip():
-                    extracted_pages.append(text)
+            for i, page in enumerate(doc, 1):
+                text = page.get_text().strip()
+                if text:
+                    extracted_pages.append(f"[Page {i}]\n{text}")
             doc.close()
 
-            full_text = "\n".join(extracted_pages).strip()
+            full_text = "\n\n".join(extracted_pages).strip()
             if not full_text:
                 raise NoExtractableTextError("NO_EXTRACTABLE_TEXT")
 

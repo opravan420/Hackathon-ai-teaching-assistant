@@ -23,10 +23,27 @@ class Document(models.Model):
     stored_file = models.FileField(upload_to='documents/')
     file_type = models.CharField(max_length=10)  # e.g., PDF, DOCX, PPTX, TXT
     file_size = models.PositiveIntegerField()  # Size in bytes
+    UNINDEXED = 'UNINDEXED'
+    PROCESSING = 'PROCESSING'
+    INDEXED = 'INDEXED'
+    INDEX_FAILED = 'FAILED'
+
+    INDEXING_STATUS_CHOICES = [
+        (UNINDEXED, 'Unindexed'),
+        (PROCESSING, 'Processing'),
+        (INDEXED, 'Indexed'),
+        (INDEX_FAILED, 'Failed'),
+    ]
+
     extraction_status = models.CharField(
         max_length=20,
         choices=EXTRACTION_STATUS_CHOICES,
         default=PENDING
+    )
+    indexing_status = models.CharField(
+        max_length=20,
+        choices=INDEXING_STATUS_CHOICES,
+        default=UNINDEXED
     )
     extracted_text = models.TextField(blank=True, default='')
     character_count = models.PositiveIntegerField(default=0)

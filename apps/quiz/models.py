@@ -12,7 +12,7 @@ class Quiz(models.Model):
     ]
 
     teacher = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='quizzes')
-    topic = models.CharField(max_length=255)
+    topic = models.CharField(max_length=255, blank=True, default='')
     difficulty = models.CharField(max_length=10, choices=DIFFICULTY_CHOICES, default=MEDIUM)
     num_questions = models.IntegerField(default=5)
     source_file_name = models.CharField(max_length=255, blank=True, null=True)

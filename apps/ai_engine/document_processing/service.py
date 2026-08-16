@@ -111,3 +111,21 @@ class DocumentService:
             raise DocumentExtractionError(f"Extraction failed: {str(e)}")
 
         return document
+
+    def delete_document(self, document: Document):
+        """
+        Physically deletes stored file, removes document DB record,
+        and rebuilds the teacher's FAISS index to purge deleted vectors.
+        """
+        teacher_id = document.teacher_id
+        if document.stored_file and os.path.exists(document.stored_file.path):
+            try:
+                os.remove(document.stored_file.path)
+            except Exception:
+                pass
+        document.delete()
+
+        # Rebuild index for teacher to remove vectors of deleted document
+        from apps.ai_engine.rag.retrieval_service import RetrievalService
+        RetrievalService().rebuild_index_for_teacher(teacher_id)
+

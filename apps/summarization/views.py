@@ -3,6 +3,8 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse
 from .models import LectureSummary
+from .services import SummarizationService, SummarizationError
+from apps.ai_engine.exceptions import LLMError
 
 @login_required
 def summary_dashboard(request):
@@ -13,32 +15,29 @@ def summary_dashboard(request):
 def summary_create(request):
     if request.method == 'POST':
         source_file = request.FILES.get('source_file')
+        custom_instruction = request.POST.get('custom_instruction', '').strip()
+        
         if not source_file:
-            messages.error(request, "Please upload a valid file.")
+            messages.error(request, "Please upload a valid document to summarize.")
+            return redirect('summary_create')
+
+        sum_service = SummarizationService()
+        try:
+            summary = sum_service.generate_summary(
+                teacher=request.user,
+                uploaded_file=source_file,
+                custom_instruction=custom_instruction
+            )
+            messages.success(request, "AI Lecture Note Summary generated successfully!")
+            return redirect('summary_review', summary_id=summary.id)
+
+        except (ValueError, SummarizationError, LLMError) as err:
+            messages.error(request, f"An error occurred while generating the summary: {str(err)}")
+            return redirect('summary_create')
+        except Exception as e:
+            messages.error(request, f"An error occurred while generating the summary: {str(e)}")
             return redirect('summary_create')
             
-        # Simulation summary text
-        mock_summary = f"""# EXECUTIVE SUMMARY FOR {source_file.name}
-
-## 1. Core Concepts
-This lecture note explores the fundamentals of the course material. Key highlights include basic definitions, architectural structures, and design considerations.
-
-## 2. Key Takeaways
-- **Efficiency**: Implementing clean code design patterns reduces memory footprint by up to 40%.
-- **Robustness**: Database-level constraints prevent data duplications and reference leaks.
-- **Modularity**: Dividing projects into standalone app modules simplifies verification and deployment.
-
-## 3. Conclusion
-The document outlines a structured methodology to build and scale applications efficiently.
-"""
-        summary = LectureSummary.objects.create(
-            teacher=request.user,
-            source_file_name=source_file.name,
-            summary_text=mock_summary
-        )
-        messages.success(request, "AI Note Summary generated successfully (Simulation)!")
-        return redirect('summary_review', summary_id=summary.id)
-        
     return render(request, 'summarization/create.html')
 
 @login_required
@@ -48,7 +47,7 @@ def summary_review(request, summary_id):
         summary_text = request.POST.get('summary_text')
         is_satisfactory = request.POST.get('is_satisfactory') == 'true'
         if summary_text:
-            summary.summary_text = summary_text
+            summary.summary_text = summary_text.strip()
             summary.is_satisfactory = is_satisfactory
             summary.save()
             messages.success(request, "Summary updated successfully.")
@@ -59,14 +58,20 @@ def summary_review(request, summary_id):
 @login_required
 def summary_download_pdf(request, summary_id):
     summary = get_object_or_404(LectureSummary, id=summary_id, teacher=request.user)
-    # Simple plain text file disguised as PDF for hackathon Phase 1
-    response = HttpResponse(summary.summary_text, content_type='application/pdf')
+    sum_service = SummarizationService()
+    pdf_data = sum_service.export_pdf(summary.summary_text, file_name=summary.source_file_name)
+    response = HttpResponse(pdf_data, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="Summary_{summary_id}.pdf"'
     return response
 
 @login_required
 def summary_download_docx(request, summary_id):
     summary = get_object_or_404(LectureSummary, id=summary_id, teacher=request.user)
-    response = HttpResponse(summary.summary_text, content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+    sum_service = SummarizationService()
+    docx_data = sum_service.export_docx(summary.summary_text, file_name=summary.source_file_name)
+    response = HttpResponse(
+        docx_data,
+        content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+    )
     response['Content-Disposition'] = f'attachment; filename="Summary_{summary_id}.docx"'
     return response
