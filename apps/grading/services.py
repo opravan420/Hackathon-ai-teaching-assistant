@@ -3,8 +3,9 @@ import json
 import logging
 from typing import List, Dict, Any
 from django.db import transaction
+from django.utils import timezone
 
-from apps.grading.models import GradingSession, StudentGradingResult, QuestionScore
+from apps.grading.models import GradingSession, StudentSubmission, StudentGradingResult, QuestionScore
 from apps.ai_engine.document_processing.service import DocumentService
 from apps.ai_engine.prompting.prompt_builder import PromptBuilder
 from apps.ai_engine.services.llm_service import LLMService
@@ -16,12 +17,218 @@ class GradingError(Exception):
     pass
 
 class GradingService:
-    """Core service for AI Student Short-Answer Grading."""
+    """Core service for AI Student Short-Answer Grading and Reusable Grading Sessions."""
 
     def __init__(self):
         self.doc_service = DocumentService()
         self.prompt_builder = PromptBuilder()
         self.llm_service = LLMService()
+        from apps.ai_engine.task_tracker import TaskTracker
+        self.task_tracker = TaskTracker()
+
+    def create_grading_session(
+        self,
+        teacher,
+        title: str,
+        question_paper_file,
+        master_answer_file=None,
+        rubric_file=None,
+        criteria_source: str = 'file',
+        evaluation_criteria: str = None,
+        additional_instructions: str = None,
+        default_max_marks: float = 5.0
+    ) -> GradingSession:
+        """
+        Processes common exam documents ONCE and saves a reusable GradingSession in READY status.
+        """
+        if not question_paper_file:
+            raise ValueError("Question Paper document is required.")
+
+        title = title.strip() if title and title.strip() else f"Grading Session - {question_paper_file.name}"
+        has_file_rubric = bool(rubric_file)
+        has_manual_rubric = bool(evaluation_criteria and evaluation_criteria.strip()) or bool(additional_instructions and additional_instructions.strip())
+
+        if criteria_source == 'file':
+            if not has_file_rubric:
+                raise ValueError("Please upload a grading criteria document.")
+            if has_manual_rubric:
+                raise ValueError("Please use either a grading criteria document or manual grading criteria, not both.")
+        elif criteria_source == 'manual':
+            if has_file_rubric:
+                raise ValueError("Please use either a grading criteria document or manual grading criteria, not both.")
+            if not has_manual_rubric:
+                raise ValueError("Please enter manual grading criteria.")
+        else:
+            if has_file_rubric and has_manual_rubric:
+                raise ValueError("Please use either a grading criteria document or manual grading criteria, not both.")
+            if not has_file_rubric and not has_manual_rubric:
+                raise ValueError("Please provide grading criteria.")
+
+        # Extract Question Paper Text
+        qp_doc = self.doc_service.process_document(teacher, question_paper_file)
+        qp_text = qp_doc.extracted_text.strip()
+        if not qp_text:
+            raise ValueError("Could not extract readable text from Question Paper document.")
+
+        # Extract Master Answer Key (Optional)
+        ma_text = None
+        ma_name = "None"
+        if master_answer_file:
+            ma_doc = self.doc_service.process_document(teacher, master_answer_file)
+            ma_text = ma_doc.extracted_text.strip()
+            ma_name = ma_doc.original_filename
+
+        # Extract Rubric / Criteria Text
+        rubric_text = ""
+        rubric_name = "None"
+        if has_file_rubric:
+            r_doc = self.doc_service.process_document(teacher, rubric_file)
+            rubric_text = r_doc.extracted_text.strip()
+            rubric_name = r_doc.original_filename
+        elif has_manual_rubric:
+            parts = []
+            if evaluation_criteria and evaluation_criteria.strip():
+                parts.append(f"Evaluation Criteria:\n{evaluation_criteria.strip()}")
+            if additional_instructions and additional_instructions.strip():
+                parts.append(f"Additional Instructions:\n{additional_instructions.strip()}")
+            rubric_text = "\n\n".join(parts)
+            rubric_name = "Manual Criteria"
+
+        session = GradingSession.objects.create(
+            teacher=teacher,
+            title=title,
+            status='READY',
+            question_paper_name=qp_doc.original_filename,
+            question_paper_text=qp_text,
+            master_answer_name=ma_name,
+            master_answer_text=ma_text,
+            criteria_source=criteria_source,
+            rubric_name=rubric_name,
+            rubric_text=rubric_text,
+            evaluation_criteria=evaluation_criteria,
+            additional_instructions=additional_instructions,
+            default_max_marks=default_max_marks
+        )
+        return session
+
+    def grade_student_submission(self, submission_id: int, task_id: str = None) -> StudentGradingResult:
+        """
+        Evaluates a StudentSubmission using pre-extracted session context.
+        Operates on persistent StudentSubmission database entity.
+        """
+        submission = StudentSubmission.objects.select_related('session', 'session__teacher').get(id=submission_id)
+        session = submission.session
+        teacher = session.teacher
+
+        submission.status = 'PROCESSING'
+        submission.task_id = task_id
+        submission.started_at = timezone.now()
+        submission.save(update_fields=['status', 'task_id', 'started_at'])
+
+        try:
+            # Step 1: Extract Student Answer Text
+            if task_id:
+                self.task_tracker.update_stage(task_id, 'EXTRACTING_HANDWRITING', f"Extracting text for '{submission.student_name}'...")
+
+            if submission.answer_sheet_file:
+                submission.answer_sheet_file.open('rb')
+                student_doc = self.doc_service.process_document(teacher, submission.answer_sheet_file)
+                student_text = student_doc.extracted_text.strip()
+            else:
+                raise GradingError("No answer sheet file found for submission.")
+
+            if not student_text:
+                raise GradingError("Could not extract readable text from student answer sheet.")
+
+            submission.extracted_text = student_text
+            submission.save(update_fields=['extracted_text'])
+
+            # Step 2: Parse question blocks using session's pre-extracted texts
+            question_blocks = self._parse_question_blocks(
+                session.question_paper_text,
+                session.master_answer_text,
+                session.default_max_marks
+            )
+
+            if not question_blocks:
+                question_blocks = [{
+                    "question_number": "Q1",
+                    "question_text": session.question_paper_text[:1000],
+                    "master_answer": session.master_answer_text[:1000] if session.master_answer_text else None,
+                    "max_marks": session.default_max_marks
+                }]
+
+            # Step 3: Evaluate question-by-question via LLM
+            evaluated_scores = []
+            for i, q_block in enumerate(question_blocks, 1):
+                if task_id:
+                    self.task_tracker.update_stage(
+                        task_id,
+                        'GENERATING',
+                        f"Evaluating {q_block['question_number']} ({i}/{len(question_blocks)}) for '{submission.student_name}' via AI..."
+                    )
+                user_prompt, system_prompt = self.prompt_builder.build_grading_prompt(
+                    question_number=q_block["question_number"],
+                    question_text=q_block["question_text"],
+                    master_answer=q_block["master_answer"],
+                    criteria=session.rubric_text,
+                    student_answer=student_text,
+                    max_marks=q_block["max_marks"]
+                )
+
+                raw_response = self.llm_service.generate_text(prompt=user_prompt, system_prompt=system_prompt)
+                eval_data = self._clean_and_parse_json(raw_response)
+                validated_eval = self._validate_grading_schema(eval_data, q_block["question_number"], q_block["max_marks"])
+                evaluated_scores.append(validated_eval)
+
+            # Step 4: Atomically save StudentGradingResult and QuestionScore records
+            if task_id:
+                self.task_tracker.update_stage(task_id, 'FINALIZING', 'Saving evaluation results in PostgreSQL...')
+
+            with transaction.atomic():
+                total_score = sum(item["marks_awarded"] for item in evaluated_scores)
+                max_score = sum(item["max_marks"] for item in evaluated_scores)
+                overall_feedback = f"Graded {len(evaluated_scores)} questions. Total score: {total_score}/{max_score}."
+
+                # Remove any stale result if retrying
+                StudentGradingResult.objects.filter(submission=submission).delete()
+
+                result = StudentGradingResult.objects.create(
+                    submission=submission,
+                    session=session,
+                    student_name=submission.student_name,
+                    answer_sheet_name=submission.answer_sheet_name,
+                    total_score=round(total_score, 2),
+                    max_score=round(max_score, 2),
+                    overall_feedback=overall_feedback
+                )
+
+                for item in evaluated_scores:
+                    QuestionScore.objects.create(
+                        grading_result=result,
+                        question_number=item["question_number"],
+                        max_score=item["max_marks"],
+                        score_given=item["marks_awarded"],
+                        feedback=item["feedback"]
+                    )
+
+                submission.status = 'COMPLETED'
+                submission.progress = 100
+                submission.current_stage = 'COMPLETED'
+                submission.error_message = None
+                submission.completed_at = timezone.now()
+                submission.save()
+
+            return result
+
+        except Exception as e:
+            err_msg = str(e)
+            submission.status = 'FAILED'
+            submission.error_message = err_msg
+            submission.save(update_fields=['status', 'error_message'])
+            if task_id:
+                self.task_tracker.fail_task(task_id, err_msg)
+            raise GradingError(err_msg)
 
     def grade_student_sheet(
         self,
@@ -33,131 +240,34 @@ class GradingService:
         evaluation_criteria: str = None,
         additional_instructions: str = None,
         student_name: str = "Student",
-        default_max_marks: float = 5.0
+        default_max_marks: float = 5.0,
+        task_id: str = None
     ) -> StudentGradingResult:
-        """
-        Evaluates a student's answer sheet question-by-question against optional master answer key and grading criteria.
-        Criteria can be provided via uploaded rubric file OR manual evaluation instructions (XOR).
-        """
-        if not question_paper_file or not student_answer_file:
-            raise ValueError("Question Paper and Student Answer Sheet are required.")
+        """Backward compatible helper creating session and evaluating single student."""
+        session = self.create_grading_session(
+            teacher=teacher,
+            title=f"Grading Session - {student_name}",
+            question_paper_file=question_paper_file,
+            master_answer_file=master_answer_file,
+            rubric_file=rubric_file,
+            criteria_source='manual' if (evaluation_criteria or additional_instructions) else 'file',
+            evaluation_criteria=evaluation_criteria,
+            additional_instructions=additional_instructions,
+            default_max_marks=default_max_marks
+        )
 
-        has_file_rubric = bool(rubric_file)
-        has_manual_rubric = bool(evaluation_criteria and evaluation_criteria.strip()) or bool(additional_instructions and additional_instructions.strip())
+        submission = StudentSubmission.objects.create(
+            session=session,
+            student_name=student_name.strip() if student_name else "Student",
+            answer_sheet_name=getattr(student_answer_file, 'name', 'answer_sheet.pdf'),
+            answer_sheet_file=student_answer_file,
+            status='PENDING'
+        )
 
-        if has_file_rubric and has_manual_rubric:
-            raise ValueError("Please use either a grading criteria document or manual grading criteria, not both.")
-
-        if not has_file_rubric and not has_manual_rubric:
-            raise ValueError("Please either upload a grading criteria document or enter the grading criteria manually.")
-
-        # Step 1: Process Question Paper, Master Answer (Optional), and Criteria
-        qp_doc = self.doc_service.process_document(teacher, question_paper_file)
-        
-        ma_text = ""
-        ma_name = "None"
-        if master_answer_file:
-            ma_doc = self.doc_service.process_document(teacher, master_answer_file)
-            ma_text = ma_doc.extracted_text
-            ma_name = ma_doc.original_filename
-        else:
-            ma_text = "No master answer key provided. Grade based on standard question requirements and grading criteria."
-
-        rubric_text = ""
-        rubric_name = "None"
-        if has_file_rubric:
-            r_doc = self.doc_service.process_document(teacher, rubric_file)
-            rubric_text = r_doc.extracted_text
-            rubric_name = r_doc.original_filename
-        elif has_manual_rubric:
-            parts = []
-            if evaluation_criteria and evaluation_criteria.strip():
-                parts.append(f"Evaluation Criteria:\n{evaluation_criteria.strip()}")
-            if additional_instructions and additional_instructions.strip():
-                parts.append(f"Additional Instructions:\n{additional_instructions.strip()}")
-            rubric_text = "\n\n".join(parts)
-            rubric_name = "Manual Criteria"
-
-        # Step 2: Process Student Answer Sheet & Check Text Extraction
-        try:
-            student_doc = self.doc_service.process_document(teacher, student_answer_file)
-            student_text = student_doc.extracted_text.strip()
-        except Exception as e:
-            raise GradingError(
-                f"Could not extract readable text from student answer sheet: {str(e)}"
-            )
-
-        if not student_text:
-            raise GradingError(
-                "Could not extract readable text from student answer sheet. "
-                "Image/handwritten scans without text layers cannot be graded automatically."
-            )
-
-        # Step 3: Parse questions and master answers into question blocks
-        question_blocks = self._parse_question_blocks(qp_doc.extracted_text, ma_text, default_max_marks)
-
-        if not question_blocks:
-            # Fallback: treat entire document as single Question 1 if structure parsing is monolithic
-            question_blocks = [{
-                "question_number": "Q1",
-                "question_text": qp_doc.extracted_text[:1000],
-                "master_answer": ma_text[:1000],
-                "max_marks": default_max_marks
-            }]
-
-        # Step 4: Evaluate question-by-question via LLM
-        evaluated_scores = []
-        for q_block in question_blocks:
-            user_prompt, system_prompt = self.prompt_builder.build_grading_prompt(
-                question_number=q_block["question_number"],
-                question_text=q_block["question_text"],
-                master_answer=q_block["master_answer"],
-                criteria=rubric_text,
-                student_answer=student_text,
-                max_marks=q_block["max_marks"]
-            )
-
-            raw_response = self.llm_service.generate_text(prompt=user_prompt, system_prompt=system_prompt)
-            eval_data = self._clean_and_parse_json(raw_response)
-            validated_eval = self._validate_grading_schema(eval_data, q_block["question_number"], q_block["max_marks"])
-            evaluated_scores.append(validated_eval)
-
-        # Step 5: Save GradingSession, StudentGradingResult, and QuestionScore records
-        with transaction.atomic():
-            session = GradingSession.objects.create(
-                teacher=teacher,
-                question_paper_name=qp_doc.original_filename,
-                master_answer_name=ma_name,
-                rubric_name=rubric_name
-            )
-
-            total_score = sum(item["marks_awarded"] for item in evaluated_scores)
-            max_score = sum(item["max_marks"] for item in evaluated_scores)
-            overall_feedback = f"Graded {len(evaluated_scores)} questions. Total score: {total_score}/{max_score}."
-
-            result = StudentGradingResult.objects.create(
-                session=session,
-                student_name=student_name.strip() if student_name else "Student",
-                answer_sheet_name=student_doc.original_filename,
-                total_score=round(total_score, 2),
-                max_score=round(max_score, 2),
-                overall_feedback=overall_feedback
-            )
-
-            for item in evaluated_scores:
-                QuestionScore.objects.create(
-                    grading_result=result,
-                    question_number=item["question_number"],
-                    max_score=item["max_marks"],
-                    score_given=item["marks_awarded"],
-                    feedback=item["feedback"]
-                )
-
-        return result
+        return self.grade_student_submission(submission.id, task_id=task_id)
 
     def _parse_question_blocks(self, qp_text: str, ma_text: str, default_max: float) -> List[Dict[str, Any]]:
         """Parses question numbers, text, master answers, and max marks from texts."""
-        # Look for patterns like Q1, Q2, Question 1, 1., etc.
         pattern = r'(?:Q|Question\s*)?(\d+)[\.\:\)]'
         qp_matches = list(re.finditer(pattern, qp_text, re.IGNORECASE))
         
@@ -171,14 +281,13 @@ class GradingService:
             end_idx = qp_matches[i+1].start() if i + 1 < len(qp_matches) else len(qp_text)
             q_text_segment = qp_text[start_idx:end_idx].strip()
 
-            # Attempt to parse explicit max marks from question text, e.g., (5 Marks), [10m], (Marks: 5)
             marks_match = re.search(r'[\(\[]\s*(\d+(?:\.\d+)?)\s*(?:marks?|pts?|m)?\s*[\)\]]', q_text_segment, re.IGNORECASE)
             parsed_max = float(marks_match.group(1)) if marks_match else default_max
 
             blocks.append({
                 "question_number": q_num,
                 "question_text": q_text_segment[:800],
-                "master_answer": ma_text[:1000],
+                "master_answer": ma_text[:1000] if ma_text else None,
                 "max_marks": parsed_max
             })
 
@@ -212,7 +321,6 @@ class GradingService:
         except (ValueError, TypeError):
             awarded = 0.0
 
-        # Enforce bounds (Never allow negative marks or marks > max_marks)
         if awarded < 0.0:
             awarded = 0.0
         if awarded > max_marks:

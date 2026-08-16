@@ -124,12 +124,18 @@ document.addEventListener('DOMContentLoaded', function() {
 
         container.addEventListener('drop', (e) => {
             const dt = e.dataTransfer;
-            const files = dt.files;
+            const files = dt ? dt.files : null;
             if (files && files.length > 0) {
                 try {
-                    fileInput.files = files;
+                    const dataTransfer = new DataTransfer();
+                    for (let i = 0; i < files.length; i++) {
+                        dataTransfer.items.add(files[i]);
+                    }
+                    fileInput.files = dataTransfer.files;
                 } catch (err) {
-                    // Ignore if fileInput.files is read-only in specific browser versions
+                    try {
+                        fileInput.files = files;
+                    } catch (err2) {}
                 }
                 handleFile(files[0]);
             }

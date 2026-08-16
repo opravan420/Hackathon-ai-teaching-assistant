@@ -59,21 +59,52 @@
 
         updateBadge('RUNNING', 'bg-indigo-50 text-indigo-600 border-indigo-100');
         
-        // Start milestone stage progression
+        let startTime = Date.now();
         const stages = STAGE_PRESETS[taskType] || STAGE_PRESETS['default'];
-        let stageIdx = 0;
 
-        // Immediately show first stage
-        applyStage(stages[0]);
+        function formatElapsed(secs) {
+            const m = Math.floor(secs / 60);
+            const s = secs % 60;
+            return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+        }
 
         if (activeInterval) clearInterval(activeInterval);
-        
+
+        // Immediately update initial state
+        const initialStage = stages[0] || { label: 'Preparing task...', msg: 'Initializing processing environment...' };
+        applyStage({
+            pct: 5,
+            label: initialStage.label,
+            msg: initialStage.msg,
+            timeStr: '00:00'
+        });
+
         activeInterval = setInterval(() => {
-            stageIdx++;
-            if (stageIdx < stages.length) {
-                applyStage(stages[stageIdx]);
+            const elapsedSec = Math.floor((Date.now() - startTime) / 1000);
+            const timeStr = formatElapsed(elapsedSec);
+
+            // Compute dynamic continuous progress percentage based on elapsed time
+            const dynamicPct = Math.min(95, Math.max(5, Math.floor(100 * (1 - Math.exp(-elapsedSec / 15)))));
+
+            // Select descriptive message stage based on elapsed time milestones
+            let stageObj;
+            if (elapsedSec < 3) {
+                stageObj = stages[0] || { label: 'Preparing task...', msg: 'Initializing processing environment...' };
+            } else if (elapsedSec < 8) {
+                stageObj = stages[1] || { label: 'Reading document...', msg: 'Extracting text and context...' };
+            } else if (elapsedSec < 15) {
+                stageObj = stages[2] || { label: 'Processing AI model...', msg: 'Synthesizing output via AI engine...' };
+            } else {
+                stageObj = stages[stages.length - 1] || { label: 'Finalizing...', msg: 'Saving results to database...' };
             }
-        }, 1500);
+
+            applyStage({
+                pct: dynamicPct,
+                label: stageObj.label,
+                msg: stageObj.msg,
+                timeStr: timeStr
+            });
+        }, 1000);
     };
 
     function applyStage(stageObj) {
@@ -85,7 +116,13 @@
         const msg = document.getElementById('taskMessageText');
 
         if (bar) bar.style.width = stageObj.pct + '%';
-        if (text) text.innerText = stageObj.pct + '%';
+        if (text) {
+            if (stageObj.timeStr) {
+                text.innerText = `Elapsed: ${stageObj.timeStr} (${stageObj.pct}%)`;
+            } else {
+                text.innerText = stageObj.pct + '%';
+            }
+        }
         if (label) label.innerText = stageObj.label;
         if (msg) msg.innerText = stageObj.msg;
     }
@@ -100,6 +137,42 @@
 
     window.updateTaskProgress = function (progressPct, stageLabel, message) {
         applyStage({ pct: progressPct, label: stageLabel, msg: message });
+    };
+
+    window.pollTaskProgress = function (taskId, customRedirectUrl) {
+        if (!taskId) return;
+        const container = document.getElementById('taskProgressContainer');
+        if (container) container.classList.remove('hidden');
+        updateBadge('RUNNING', 'bg-indigo-50 text-indigo-600 border-indigo-100');
+
+        if (activeInterval) clearInterval(activeInterval);
+
+        activeInterval = setInterval(function () {
+            fetch(`/api/ai/tasks/${taskId}/`)
+                .then(res => res.json())
+                .then(data => {
+                    if (data.status === 'RUNNING') {
+                        applyStage({
+                            pct: data.progress || 50,
+                            label: data.stage_label || 'Processing...',
+                            msg: data.message || 'Executing task...'
+                        });
+                    } else if (data.status === 'COMPLETED') {
+                        clearInterval(activeInterval);
+                        window.completeTaskProgress(data.message || 'Evaluation completed successfully!');
+                        const targetUrl = customRedirectUrl || data.redirect_url;
+                        setTimeout(() => {
+                            if (targetUrl) {
+                                window.location.href = targetUrl;
+                            }
+                        }, 800);
+                    } else if (data.status === 'FAILED') {
+                        clearInterval(activeInterval);
+                        window.failTaskProgress(data.error || data.message || 'Task processing failed.');
+                    }
+                })
+                .catch(() => {});
+        }, 1200);
     };
 
     window.completeTaskProgress = function (message) {
@@ -127,6 +200,17 @@
         if (spinner) {
             spinner.className = 'w-8 h-8 rounded-xl bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 shrink-0';
             spinner.innerHTML = `<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>`;
+        }
+
+        // Restore submit button state
+        const form = document.querySelector('form.ai-task-form');
+        if (form) {
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.classList.remove('opacity-60', 'cursor-not-allowed');
+                if (originalSubmitBtnHTML) submitBtn.innerHTML = originalSubmitBtnHTML;
+            }
         }
     };
 

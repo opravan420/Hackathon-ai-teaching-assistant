@@ -71,55 +71,26 @@ TEMPLATES = [
 WSGI_APPLICATION = 'config.wsgi.application'
 ASGI_APPLICATION = 'config.asgi.application'
 
-# Database Connection Parsing
-DATABASE_URL = os.getenv('DATABASE_URL')
-if DATABASE_URL:
-    url = urlparse(DATABASE_URL)
-    host = url.hostname or '127.0.0.1'
-    port = url.port or 5432
-    
-    postgres_reachable = False
-    try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(0.5)
-        res = sock.connect_ex((host, port))
-        if res == 0:
-            postgres_reachable = True
-        sock.close()
-    except Exception:
-        postgres_reachable = False
+# Database Connection Parsing (PostgreSQL ONLY)
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgres://postgres:postgres@127.0.0.1:5432/ai_teaching_db')
+url = urlparse(DATABASE_URL)
+host = url.hostname or '127.0.0.1'
+port = url.port or 5432
 
-    if postgres_reachable:
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': url.path[1:],
-                'USER': url.username,
-                'PASSWORD': url.password,
-                'HOST': host,
-                'PORT': port,
-                'TEST': {
-                    'CHARSET': 'UTF8',
-                    'TEMPLATE': 'template0',
-                },
-            }
-        }
-    else:
-        print(f"Warning: PostgreSQL server at {host}:{port} is unreachable. Falling back to local SQLite database (db.sqlite3).")
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
-else:
-    # Fallback to sqlite3 for safety / check execution
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': url.path.lstrip('/') or 'ai_teaching_db',
+        'USER': url.username or 'postgres',
+        'PASSWORD': url.password or 'postgres',
+        'HOST': host,
+        'PORT': port,
+        'CONN_MAX_AGE': 0,
+        'TEST': {
+            'CHARSET': 'UTF8',
+        },
     }
+}
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

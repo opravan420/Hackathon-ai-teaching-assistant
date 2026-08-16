@@ -1,10 +1,11 @@
+import time
 from unittest.mock import patch
-from django.test import TestCase, Client
+from django.test import TestCase, Client, TransactionTestCase
 from django.urls import reverse
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.contrib.auth import get_user_model
 from apps.accounts.models import TeacherProfile
-from apps.grading.models import GradingSession, StudentGradingResult, QuestionScore
+from apps.grading.models import GradingSession, StudentSubmission, StudentGradingResult, QuestionScore
 from django.test.signals import template_rendered
 from django.test.client import store_rendered_templates
 
@@ -36,89 +37,52 @@ class GradingTestCase(TestCase):
             '}'
         )
 
-    @patch('apps.ai_engine.services.llm_service.LLMService.generate_text')
-    def test_uploaded_rubric_with_optional_master_answer_key_success(self, mock_generate):
-        mock_generate.return_value = self.mock_eval_json
+    @patch('apps.ai_engine.services.llm_service.LLMService.perform_health_check')
+    def test_create_reusable_session_success(self, mock_health):
+        mock_health.return_value = {"ollama_status": "AVAILABLE", "model_status": "READY", "model_tag": "gemma3:4b", "api_base": "http://localhost:11434"}
 
         qp_file = SimpleUploadedFile("qp.txt", b"Q1 (5 Marks): What is deadlock?", content_type="text/plain")
         rubric_file = SimpleUploadedFile("rubric.txt", b"Grade based on process isolation and resource lock.", content_type="text/plain")
-        student_file = SimpleUploadedFile("student_answer.txt", b"Deadlock happens when processes hold and wait.", content_type="text/plain")
 
-        # Test WITHOUT master answer key (Master Answer Key is optional!)
         response = self.client.post(reverse('grading_create'), {
+            'title': 'OS Midterm 2026',
             'question_paper': qp_file,
             'criteria_source': 'file',
             'rubric': rubric_file,
-            'student_name': 'Alice Smith',
-            'student_image': student_file
         }, follow=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'grading/review.html')
+        self.assertTemplateUsed(response, 'grading/session_detail.html')
 
-        session = GradingSession.objects.get(teacher=self.teacher1, question_paper_name='qp.txt')
-        self.assertEqual(session.master_answer_name, 'None')
+        session = GradingSession.objects.get(teacher=self.teacher1, title='OS Midterm 2026')
+        self.assertEqual(session.status, 'READY')
+        self.assertEqual(session.question_paper_name, 'qp.txt')
         self.assertEqual(session.rubric_name, 'rubric.txt')
-        result = StudentGradingResult.objects.get(session=session, student_name='Alice Smith')
-        self.assertEqual(result.total_score, 4.5)
-
-    @patch('apps.ai_engine.services.llm_service.LLMService.generate_text')
-    def test_manual_criteria_with_master_answer_key_success(self, mock_generate):
-        mock_generate.return_value = self.mock_eval_json
-
-        qp_file = SimpleUploadedFile("qp.txt", b"Q1 (5 Marks): What is deadlock?", content_type="text/plain")
-        key_file = SimpleUploadedFile("key.txt", b"Q1: Deadlock is mutual waiting state.", content_type="text/plain")
-        student_file = SimpleUploadedFile("student_answer.txt", b"Deadlock occurs when process wait on each other.", content_type="text/plain")
-
-        response = self.client.post(reverse('grading_create'), {
-            'question_paper': qp_file,
-            'master_answer': key_file,
-            'criteria_source': 'manual',
-            'default_max_marks': '5.0',
-            'evaluation_criteria': 'Check definition accuracy and key terms',
-            'additional_instructions': 'Give partial credit for held resource concepts',
-            'student_name': 'Bob Johnson',
-            'student_image': student_file
-        }, follow=True)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertTemplateUsed(response, 'grading/review.html')
-
-        session = GradingSession.objects.get(teacher=self.teacher1, question_paper_name='qp.txt')
-        self.assertEqual(session.master_answer_name, 'key.txt')
-        self.assertEqual(session.rubric_name, 'Manual Criteria')
-        result = StudentGradingResult.objects.get(session=session, student_name='Bob Johnson')
-        self.assertEqual(result.total_score, 4.5)
+        self.assertIn("deadlock", session.question_paper_text.lower())
 
     def test_missing_criteria_validation_error(self):
         qp_file = SimpleUploadedFile("qp.txt", b"Q1: Define OS.", content_type="text/plain")
-        student_file = SimpleUploadedFile("student.txt", b"Operating system manages hardware.", content_type="text/plain")
 
-        # Submit without rubric document or manual criteria
         response = self.client.post(reverse('grading_create'), {
+            'title': 'Missing Criteria Session',
             'question_paper': qp_file,
             'criteria_source': 'file',
-            'student_name': 'Charlie',
-            'student_image': student_file
         }, follow=True)
 
         self.assertEqual(response.status_code, 200)
         self.assertTemplateUsed(response, 'grading/create.html')
-        self.assertContains(response, "Please either upload a grading criteria document or enter the grading criteria manually.")
+        self.assertContains(response, "Please upload a grading criteria document.")
 
     def test_both_criteria_methods_validation_error(self):
         qp_file = SimpleUploadedFile("qp.txt", b"Q1: Define OS.", content_type="text/plain")
         rubric_file = SimpleUploadedFile("rubric.txt", b"Rubric text.", content_type="text/plain")
-        student_file = SimpleUploadedFile("student.txt", b"Operating system manages hardware.", content_type="text/plain")
 
-        # Submit with BOTH criteria document and manual criteria
         response = self.client.post(reverse('grading_create'), {
+            'title': 'Both Criteria Session',
             'question_paper': qp_file,
             'criteria_source': 'manual',
             'rubric': rubric_file,
             'evaluation_criteria': 'Manual criteria text',
-            'student_name': 'Charlie',
-            'student_image': student_file
         }, follow=True)
 
         self.assertEqual(response.status_code, 200)
@@ -126,7 +90,97 @@ class GradingTestCase(TestCase):
         self.assertContains(response, "Please use either a grading criteria document or manual grading criteria, not both.")
 
     def test_teacher_isolation(self):
-        s2 = GradingSession.objects.create(teacher=self.teacher2, question_paper_name="qp2.txt", master_answer_name="key2.txt")
-        r2 = StudentGradingResult.objects.create(session=s2, student_name="Dave", answer_sheet_name="ans.txt", total_score=5, max_score=5)
-        response = self.client.get(reverse('grading_result_review', kwargs={'result_id': r2.id}))
+        s2 = GradingSession.objects.create(
+            teacher=self.teacher2,
+            title="Teacher 2 Session",
+            question_paper_name="qp2.txt",
+            question_paper_text="Q1: Define process."
+        )
+        response = self.client.get(reverse('grading_session_detail', kwargs={'session_id': s2.id}))
         self.assertEqual(response.status_code, 404)
+
+
+class AsyncGradingSessionTestCase(TransactionTestCase):
+    def setUp(self):
+        self.client = Client()
+        self.teacher1 = User.objects.create_user(username='async_session_t1', password='password123', role=User.TEACHER)
+        TeacherProfile.objects.create(user=self.teacher1, employee_id='EMP003', department='CS')
+        self.client.login(username='async_session_t1', password='password123')
+
+        self.session = GradingSession.objects.create(
+            teacher=self.teacher1,
+            title="Async OS Exam 2026",
+            status="READY",
+            question_paper_name="qp.txt",
+            question_paper_text="Q1 (5 Marks): What is an Operating System?",
+            rubric_name="rubric.txt",
+            rubric_text="Grade based on resource management accuracy."
+        )
+
+        self.mock_eval_json = (
+            '{\n'
+            '  "question_number": "Q1",\n'
+            '  "marks_awarded": 5.0,\n'
+            '  "max_marks": 5.0,\n'
+            '  "feedback": "Excellent definition of hardware management."\n'
+            '}'
+        )
+
+    @patch('apps.ai_engine.services.llm_service.LLMService.perform_health_check')
+    @patch('apps.ai_engine.services.llm_service.LLMService.generate_text')
+    def test_grade_multiple_students_under_same_session(self, mock_generate, mock_health):
+        mock_health.return_value = {"ollama_status": "AVAILABLE", "model_status": "READY", "model_tag": "gemma3:4b", "api_base": "http://localhost:11434"}
+        mock_generate.return_value = self.mock_eval_json
+
+        student1_file = SimpleUploadedFile("alice.txt", b"An OS manages computer hardware and software.", content_type="text/plain")
+        student2_file = SimpleUploadedFile("bob.txt", b"An OS acts as an intermediary between user and computer.", content_type="text/plain")
+
+        # Submit Student 1 (Alice)
+        resp1 = self.client.post(
+            reverse('grade_student_ajax', kwargs={'session_id': self.session.id}),
+            {
+                'student_name': 'Alice Smith',
+                'student_image': student1_file
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp1.status_code, 200)
+        data1 = resp1.json()
+        self.assertEqual(data1['status'], 'STARTED')
+
+        # Wait for Student 1 completion
+        from apps.ai_engine.task_tracker import TaskTracker
+        tracker = TaskTracker()
+        for _ in range(25):
+            task = tracker.get_task(data1['task_id'])
+            if task and task['status'] in ('COMPLETED', 'FAILED'):
+                break
+            time.sleep(0.2)
+
+        # Submit Student 2 (Bob) under the SAME session
+        resp2 = self.client.post(
+            reverse('grade_student_ajax', kwargs={'session_id': self.session.id}),
+            {
+                'student_name': 'Bob Jones',
+                'student_image': student2_file
+            },
+            HTTP_X_REQUESTED_WITH='XMLHttpRequest'
+        )
+        self.assertEqual(resp2.status_code, 200)
+        data2 = resp2.json()
+        self.assertEqual(data2['status'], 'STARTED')
+
+        for _ in range(25):
+            task = tracker.get_task(data2['task_id'])
+            if task and task['status'] in ('COMPLETED', 'FAILED'):
+                break
+            time.sleep(0.2)
+
+        # Verify PostgreSQL database state: Both students linked to same session!
+        submissions = StudentSubmission.objects.filter(session=self.session)
+        self.assertEqual(submissions.count(), 2)
+
+        results = StudentGradingResult.objects.filter(session=self.session)
+        self.assertEqual(results.count(), 2)
+        self.assertTrue(results.filter(student_name='Alice Smith').exists())
+        self.assertTrue(results.filter(student_name='Bob Jones').exists())

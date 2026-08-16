@@ -14,10 +14,37 @@ def task_status_api(request, task_id):
     """
     Central API endpoint for frontend task status & progress polling.
     Returns task state, progress percentage, current stage label, and dynamic message.
+    Includes persistent database lookup for StudentSubmission records.
     """
     tracker = TaskTracker()
     task = tracker.get_task(task_id)
     if not task:
+        from apps.grading.models import StudentSubmission
+        sub = StudentSubmission.objects.filter(task_id=task_id).select_related('result').first()
+        if sub:
+            if sub.status == 'COMPLETED' and hasattr(sub, 'result') and sub.result:
+                from django.urls import reverse
+                redirect_url = reverse('grading_result_review', kwargs={'result_id': sub.result.id})
+                return JsonResponse({
+                    'task_id': task_id,
+                    'status': 'COMPLETED',
+                    'progress': 100,
+                    'stage': 'COMPLETED',
+                    'stage_label': 'Grading Completed',
+                    'message': 'Evaluation completed successfully!',
+                    'redirect_url': redirect_url
+                })
+            elif sub.status == 'FAILED':
+                return JsonResponse({
+                    'task_id': task_id,
+                    'status': 'FAILED',
+                    'progress': 0,
+                    'stage': 'FAILED',
+                    'stage_label': 'Evaluation Failed',
+                    'message': sub.error_message or 'Evaluation failed.',
+                    'error': sub.error_message or 'Evaluation failed.'
+                })
+
         return JsonResponse({
             'task_id': task_id,
             'status': 'FAILED',
@@ -26,7 +53,7 @@ def task_status_api(request, task_id):
             'stage_label': 'Task Not Found',
             'message': 'The specified task ID could not be found.',
             'error': 'Task not found.'
-        }, status=404)
+        }, status=200)
 
     return JsonResponse(task)
 

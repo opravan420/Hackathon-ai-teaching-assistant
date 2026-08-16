@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
 
-{% block title %}Start Grading Session — AI Faculty TA{% endblock %}
+{% block title %}Create Grading Session — AI Faculty TA{% endblock %}
 
-{% block section_title %}New Grading Session{% endblock %}
+{% block section_title %}Create Reusable Grading Session{% endblock %}
 
 {% block content %}
 <div class="max-w-2xl mx-auto">
@@ -15,12 +15,19 @@
     <!-- Form Card -->
     <div class="bg-white border border-slate-200/80 rounded-2xl p-8 shadow-sm">
         <div class="mb-8">
-            <h2 class="font-outfit font-bold text-2xl text-slate-900">Start AI Grading</h2>
-            <p class="text-slate-500 text-sm mt-1">Upload reference question paper, optional answer key, criteria, and student answer sheet.</p>
+            <h2 class="font-outfit font-bold text-2xl text-slate-900">Create Exam Grading Session</h2>
+            <p class="text-slate-500 text-sm mt-1">Upload reference question paper, optional answer key, and criteria once. You can evaluate multiple student answer sheets under this session.</p>
         </div>
 
-        <form method="post" enctype="multipart/form-data" id="grading_form" class="ai-task-form space-y-6" data-task-type="grading" data-task-title="Evaluating Student Answer Sheet via AI">
+        <form method="post" enctype="multipart/form-data" id="session_create_form" class="space-y-6">
             {% csrf_token %}
+
+            <!-- Session Title -->
+            <div>
+                <label for="title" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2">Session / Exam Title *</label>
+                <input type="text" name="title" required id="title" placeholder="e.g. Operating Systems Midterm Exam 2026"
+                       class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all focus:bg-white">
+            </div>
 
             <!-- Question Paper (Required) -->
             {% include 'components/file_upload.html' with input_name="question_paper" input_id="id_question_paper" label_text="Upload Question Paper *" accept_types=".pdf,.docx,.txt" help_text="PDF, DOCX, or TXT (Required)" is_required=True max_size_mb=10 %}
@@ -35,7 +42,7 @@
                 <div class="flex items-center justify-between">
                     <div>
                         <label class="block text-xs font-semibold text-slate-700 uppercase tracking-wider">Grading Criteria *</label>
-                        <p class="text-xs text-slate-500 mt-0.5">Provide grading criteria using either a document or the manual form.</p>
+                        <p class="text-xs text-slate-500 mt-0.5">Provide grading criteria using either a document or manual entry.</p>
                     </div>
                 </div>
 
@@ -84,25 +91,10 @@
                 <p id="criteria_error_msg" class="text-xs text-rose-600 hidden font-medium"></p>
             </div>
 
-            <hr class="border-slate-200 my-2">
-
-            <!-- Student Name -->
-            <div>
-                <label for="student_name" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Student Name</label>
-                <input type="text" name="student_name" required id="student_name" value="Alice Smith"
-                       class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all focus:bg-white">
-            </div>
-
-            <!-- Student Answer Sheet (Required) -->
-            {% include 'components/file_upload.html' with input_name="student_image" input_id="id_student_image" label_text="Upload Student Answer Sheet *" accept_types=".png,.jpg,.jpeg,.pdf,.docx,.txt" help_text="PNG, JPG/JPEG, PDF, DOCX, or TXT" is_required=True max_size_mb=10 %}
-
-            <!-- Task Progress Component -->
-            {% include 'components/task_progress.html' with title="Evaluating Student Answer Sheet via AI" %}
-
             <!-- Submit -->
-            <button type="submit" id="btn_submit_grading"
+            <button type="submit" id="btn_submit_session"
                     class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold font-outfit py-4 px-6 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer">
-                Evaluate Answer Sheet
+                Save & Initialize Session
             </button>
         </form>
     </div>
@@ -119,7 +111,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const evalCriteriaText = document.getElementById('evaluation_criteria');
     const addInstructionsText = document.getElementById('additional_instructions');
     const errorMsg = document.getElementById('criteria_error_msg');
-    const form = document.getElementById('grading_form');
+    const form = document.getElementById('session_create_form');
 
     function setCriteriaMode(mode) {
         criteriaSourceInput.value = mode;
@@ -129,29 +121,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (mode === 'file') {
-            // Activate File Tab UI
             btnFile.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all shadow-sm bg-indigo-600 text-white cursor-pointer flex items-center justify-center space-x-2';
             btnManual.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 cursor-pointer flex items-center justify-center space-x-2';
             
             containerFile.classList.remove('hidden');
             containerManual.classList.add('hidden');
 
-            // Reset manual text inputs
+            if (rubricInput) rubricInput.disabled = false;
             if (evalCriteriaText) evalCriteriaText.value = '';
             if (addInstructionsText) addInstructionsText.value = '';
         } else {
-            // Activate Manual Tab UI
             btnManual.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all shadow-sm bg-indigo-600 text-white cursor-pointer flex items-center justify-center space-x-2';
             btnFile.className = 'flex-1 py-2 px-3 text-xs font-semibold rounded-lg transition-all text-slate-600 hover:text-slate-900 hover:bg-slate-200/60 cursor-pointer flex items-center justify-center space-x-2';
             
             containerManual.classList.remove('hidden');
             containerFile.classList.add('hidden');
 
-            // Reset file input if present
             if (rubricInput) {
                 rubricInput.value = '';
-                const removeBtn = containerFile.querySelector('.js-btn-remove');
-                if (removeBtn) removeBtn.click();
+                rubricInput.disabled = true;
             }
         }
     }

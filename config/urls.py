@@ -24,5 +24,6 @@ urlpatterns = [
     path('summarization/', include('apps.summarization.urls')),
     path('grading/', include('apps.grading.urls')),
     path('ai/', include('apps.ai_engine.urls')),
+    path('api/ai/', include('apps.ai_engine.urls')),
 ]
 

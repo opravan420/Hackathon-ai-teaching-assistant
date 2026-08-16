@@ -31,15 +31,21 @@ class OllamaAdapter(BaseLLMAdapter):
             The generated response string.
         """
         url = f"{self.api_base}/api/generate"
+        default_options = {
+            "num_predict": 256,
+            "temperature": 0.2
+        }
+        if options:
+            default_options.update(options)
+
         payload = {
             "model": self.model_tag,
             "prompt": prompt,
-            "stream": False
+            "stream": False,
+            "options": default_options
         }
         if system_prompt:
             payload["system"] = system_prompt
-        if options:
-            payload["options"] = options
 
         data = json.dumps(payload).encode('utf-8')
         req = urllib.request.Request(

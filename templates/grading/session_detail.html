@@ -1,67 +1,235 @@
 {% extends 'base.html' %}
 
-{% block title %}Grading Session Details — AI Faculty TA{% endblock %}
+{% block title %}{{ session.title }} — Session Hub{% endblock %}
 
-{% block section_title %}Grading Session{% endblock %}
+{% block section_title %}Grading Session Hub{% endblock %}
 
 {% block content %}
-<div class="space-y-6">
+<div class="max-w-6xl mx-auto space-y-8">
     <!-- Breadcrumb back -->
     <a href="{% url 'grading_dashboard' %}" class="inline-flex items-center text-xs font-semibold text-slate-500 hover:text-slate-700 transition-colors">
         <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         Back to Dashboard
     </a>
 
-    <!-- Session Details -->
-    <div class="p-6 bg-white border border-slate-200/80 rounded-2xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-sm">
-        <div>
-            <span class="text-xs text-slate-450 font-semibold uppercase tracking-wider">Session Details</span>
-            <h2 class="font-outfit font-bold text-xl text-slate-900 mt-1">QP: {{ session.question_paper_name }}</h2>
-            <p class="text-slate-500 text-xs mt-1">Created: {{ session.created_at|date:"M d, Y H:i" }}</p>
+    <!-- Session Header Summary Card -->
+    <div class="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+        <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div>
+                <div class="flex items-center space-x-3">
+                    <h1 class="font-outfit font-bold text-2xl text-slate-900">{{ session.title }}</h1>
+                    <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        READY
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500 mt-1">Created on {{ session.created_at|date:"M d, Y, h:i A" }}</p>
+            </div>
         </div>
-        <div class="text-xs font-semibold text-indigo-650 bg-indigo-50 border border-indigo-100 rounded-full px-3.5 py-1.5 uppercase tracking-wide">
-            {{ results.count }} Answer Sheets Evaluated
+
+        <hr class="border-slate-100 my-4">
+
+        <!-- Metadata Pills -->
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+            <div class="bg-slate-50 border border-slate-200/60 rounded-xl p-3">
+                <span class="text-slate-400 font-semibold block uppercase">Question Paper</span>
+                <span class="text-slate-800 font-medium truncate block mt-0.5" title="{{ session.question_paper_name }}">{{ session.question_paper_name }}</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200/60 rounded-xl p-3">
+                <span class="text-slate-400 font-semibold block uppercase">Master Answer Key</span>
+                <span class="text-slate-800 font-medium truncate block mt-0.5">{{ session.master_answer_name }}</span>
+            </div>
+            <div class="bg-slate-50 border border-slate-200/60 rounded-xl p-3">
+                <span class="text-slate-400 font-semibold block uppercase">Grading Criteria</span>
+                <span class="text-slate-800 font-medium truncate block mt-0.5">{{ session.rubric_name }}</span>
+            </div>
         </div>
     </div>
 
-    <!-- Student Results Table -->
-    <div class="bg-white border border-slate-200/80 rounded-2xl overflow-hidden shadow-sm">
-        <div class="overflow-x-auto">
-            <table class="w-full text-left border-collapse">
-                <thead>
-                    <tr class="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                        <th class="px-6 py-4">Student Name</th>
-                        <th class="px-6 py-4">Answer Sheet Image</th>
-                        <th class="px-6 py-4">Score</th>
-                        <th class="px-6 py-4">Date Graded</th>
-                        <th class="px-6 py-4 text-right">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-slate-200 text-sm text-slate-650">
-                    {% for result in results %}
-                    <tr class="hover:bg-slate-50/50 transition-all">
-                        <td class="px-6 py-4 font-semibold text-slate-800">{{ result.student_name }}</td>
-                        <td class="px-6 py-4 text-slate-500 font-mono text-xs">{{ result.answer_sheet_name }}</td>
-                        <td class="px-6 py-4 font-mono font-semibold text-slate-800">
-                            {{ result.total_score }} / {{ result.max_score }}
-                        </td>
-                        <td class="px-6 py-4 text-slate-500">{{ result.created_at|date:"M d, Y H:i" }}</td>
-                        <td class="px-6 py-4 text-right">
-                            <a href="{% url 'grading_result_review' result.id %}" class="text-xs font-semibold text-indigo-650 hover:text-indigo-800 bg-indigo-50 border border-indigo-100 hover:bg-indigo-100 rounded-lg px-3 py-1.5 transition-all">
-                                Verify & Edit Marks
-                            </a>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="5" class="px-6 py-12 text-center text-slate-400 font-medium">
-                            No student answer sheets graded in this session yet.
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Main Grid: Left = Add Student Answer Sheet, Right = Submissions Table -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        
+        <!-- Left: Upload & Evaluate Student Form -->
+        <div class="lg:col-span-1">
+            <div class="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm sticky top-6">
+                <h3 class="font-outfit font-bold text-lg text-slate-900 mb-1">Evaluate Student Sheet</h3>
+                <p class="text-xs text-slate-500 mb-6">Upload a student's answer sheet to grade it against this session's exam context.</p>
+
+                <form method="post" action="{% url 'grade_student_ajax' session.id %}" enctype="multipart/form-data" id="student_grade_form" class="space-y-5">
+                    {% csrf_token %}
+
+                    <div>
+                        <label for="student_name" class="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">Student Name *</label>
+                        <input type="text" name="student_name" required id="student_name" placeholder="e.g. Alice Smith"
+                               class="w-full bg-slate-50 border border-slate-350 focus:border-indigo-500 text-slate-800 text-sm rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-100 transition-all focus:bg-white">
+                    </div>
+
+                    {% include 'components/file_upload.html' with input_name="student_image" input_id="id_student_image" label_text="Student Answer Sheet *" accept_types=".png,.jpg,.jpeg,.pdf,.docx,.txt" help_text="PNG, JPG, PDF, DOCX, TXT" is_required=True max_size_mb=10 %}
+
+                    <!-- Task Progress Component -->
+                    {% include 'components/task_progress.html' with title="Evaluating Student Answer Sheet..." %}
+
+                    <button type="submit" id="btn_grade_student"
+                            class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold font-outfit py-3.5 px-4 rounded-xl shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 hover:scale-[1.01] active:scale-[0.99] transition-all cursor-pointer">
+                        Grade Student Answer Sheet
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Right: Graded Submissions List -->
+        <div class="lg:col-span-2">
+            <div class="bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+                <div class="flex items-center justify-between mb-6">
+                    <div>
+                        <h3 class="font-outfit font-bold text-lg text-slate-900">Graded Submissions</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">Results for students evaluated under this exam session.</p>
+                    </div>
+                    <span class="px-3 py-1 bg-slate-100 text-slate-700 rounded-full text-xs font-bold font-mono">
+                        {{ submissions|length }} Submissions
+                    </span>
+                </div>
+
+                {% if submissions %}
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="border-b border-slate-200 text-[11px] font-semibold uppercase text-slate-400 tracking-wider">
+                                <th class="py-3 px-4">Student</th>
+                                <th class="py-3 px-4">Status</th>
+                                <th class="py-3 px-4">Score</th>
+                                <th class="py-3 px-4 text-right">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-slate-100 text-sm">
+                            {% for sub in submissions %}
+                            <tr class="hover:bg-slate-50/80 transition-colors">
+                                <td class="py-3.5 px-4">
+                                    <span class="font-semibold text-slate-800 block">{{ sub.student_name }}</span>
+                                    <span class="text-xs text-slate-400 block truncate max-w-[180px]" title="{{ sub.answer_sheet_name }}">{{ sub.answer_sheet_name }}</span>
+                                </td>
+                                <td class="py-3.5 px-4">
+                                    {% if sub.status == 'COMPLETED' %}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                            Completed
+                                        </span>
+                                    {% elif sub.status == 'PROCESSING' %}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200 animate-pulse">
+                                            Processing AI
+                                        </span>
+                                    {% elif sub.status == 'FAILED' %}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200" title="{{ sub.error_message }}">
+                                            Failed
+                                        </span>
+                                    {% else %}
+                                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
+                                            Pending
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3.5 px-4 font-mono font-medium">
+                                    {% if sub.result %}
+                                        <span class="text-slate-900 font-bold">{{ sub.result.total_score }}</span>
+                                        <span class="text-slate-400 text-xs">/ {{ sub.result.max_score }}</span>
+                                    {% else %}
+                                        <span class="text-slate-400 text-xs">—</span>
+                                    {% endif %}
+                                </td>
+                                <td class="py-3.5 px-4 text-right">
+                                    {% if sub.result %}
+                                        <a href="{% url 'grading_result_review' sub.result.id %}" class="inline-flex items-center px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-lg transition-colors">
+                                            Review & Edit
+                                        </a>
+                                    {% elif sub.status == 'FAILED' %}
+                                        <button type="button" data-retry-url="{% url 'retry_student_ajax' sub.id %}" class="js-retry-btn inline-flex items-center px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-700 text-xs font-semibold rounded-lg transition-colors cursor-pointer">
+                                            Retry
+                                        </button>
+                                    {% else %}
+                                        <span class="text-xs text-slate-400">—</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-12 border-2 border-dashed border-slate-200 rounded-xl">
+                    <svg class="w-12 h-12 mx-auto text-slate-300 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                    <p class="text-sm font-semibold text-slate-600">No student answer sheets evaluated yet</p>
+                    <p class="text-xs text-slate-400 mt-1">Use the form on the left to grade your first student sheet for this exam.</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
     </div>
 </div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('student_grade_form');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.classList.add('opacity-60', 'cursor-not-allowed');
+            }
+
+            const formData = new FormData(form);
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'STARTED' && data.task_id) {
+                    window.pollTaskProgress(data.task_id);
+                } else if (data.status === 'FAILED') {
+                    window.failTaskProgress(data.error || 'Evaluation failed.');
+                }
+            })
+            .catch(err => {
+                window.failTaskProgress('Network error while submitting answer sheet.');
+            });
+        });
+    }
+
+    // Handle Retry buttons
+    document.querySelectorAll('.js-retry-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const url = this.getAttribute('data-retry-url');
+            if (!url) return;
+
+            this.disabled = true;
+            this.textContent = 'Starting...';
+
+            fetch(url, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.status === 'STARTED' && data.task_id) {
+                    window.pollTaskProgress(data.task_id);
+                } else {
+                    alert(data.error || 'Retry failed.');
+                    window.location.reload();
+                }
+            })
+            .catch(err => {
+                alert('Network error during retry.');
+                window.location.reload();
+            });
+        });
+    });
+});
+</script>
 {% endblock %}

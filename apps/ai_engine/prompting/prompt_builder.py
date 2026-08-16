@@ -86,7 +86,7 @@ class PromptBuilder:
         self,
         question_number: str,
         question_text: str,
-        master_answer: str,
+        master_answer: Optional[str],
         criteria: str,
         student_answer: str,
         max_marks: float
@@ -94,7 +94,7 @@ class PromptBuilder:
         """Constructs prompt for question-by-question student short-answer evaluation."""
         system_prompt = (
             "You are an academic evaluation assistant for university faculty grading short-answer student responses.\n"
-            "Evaluate the student's answer fairly and objectively against the reference answer key and grading criteria.\n"
+            "Evaluate the student's answer fairly and objectively against available reference information and grading criteria.\n"
             "CRITICAL RULES:\n"
             "1. Output ONLY valid raw JSON with keys: 'question_number', 'marks_awarded', 'max_marks', 'feedback'.\n"
             "2. Do NOT enclose in markdown code blocks or add text before/after JSON.\n"
@@ -102,10 +102,19 @@ class PromptBuilder:
             "4. Provide constructive feedback explaining score deductions or praising accurate responses."
         )
 
+        if master_answer and master_answer.strip():
+            answer_clause = f"MASTER REFERENCE ANSWER: {master_answer.strip()}\n"
+        else:
+            answer_clause = (
+                "MASTER REFERENCE ANSWER: No Master Answer Key was provided. "
+                "Do not invent or assume a Master Answer Key. "
+                "Evaluate the student response objectively based on Question Paper requirements and Grading Criteria.\n"
+            )
+
         user_prompt = (
             f"EVALUATION TASK FOR {question_number}:\n"
             f"QUESTION: {question_text.strip()}\n"
-            f"MASTER REFERENCE ANSWER: {master_answer.strip()}\n"
+            f"{answer_clause}"
             f"GRADING CRITERIA / RUBRIC: {criteria.strip() if criteria.strip() else 'Standard accuracy and technical correctness.'}\n"
             f"STUDENT ANSWER: {student_answer.strip()}\n"
             f"MAXIMUM MARKS AVAILABLE: {max_marks}\n\n"

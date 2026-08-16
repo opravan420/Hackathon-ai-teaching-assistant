@@ -108,7 +108,7 @@ class TaskTracker:
         logger.info(f"TaskTracker: Updated task {task_id} -> Stage: {stage} ({progress_pct}%)")
         return True
 
-    def complete_task(self, task_id: str, message: str = "Task completed successfully.") -> bool:
+    def complete_task(self, task_id: str, message: str = "Task completed successfully.", redirect_url: Optional[str] = None) -> bool:
         """Marks a task as COMPLETED at 100%."""
         if task_id not in self._tasks:
             return False
@@ -119,6 +119,8 @@ class TaskTracker:
         task['stage'] = 'COMPLETED'
         task['stage_label'] = 'Completed'
         task['message'] = message
+        if redirect_url:
+            task['redirect_url'] = redirect_url
         task['updated_at'] = time.time()
         logger.info(f"TaskTracker: Completed task {task_id}")
         return True
